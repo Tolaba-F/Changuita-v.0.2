@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0046b4">
+<title>Changuitas</title>
+<link rel="icon" href="logo-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== 1) INICIO DE SESIÓN / REGISTRO (es lo primero que se ve al abrir el enlace) ===== -->
+<div id="authScreen">
+  <img class="auth-logo" src="logo.png" alt="Changuita - Trabajo rápido y cerca">
+
+  <div class="auth-tabs">
+    <div class="auth-tab active" id="tabLogin" onclick="setAuthMode('login')">Iniciar sesión</div>
+    <div class="auth-tab" id="tabRegister" onclick="setAuthMode('register')">Crear cuenta</div>
+  </div>
+
+  <div id="authNameWrap" class="hidden">
+    <label for="authName">Nombre</label>
+    <input type="text" id="authName" placeholder="Ej: Juan Pérez" autocomplete="name">
+  </div>
+
+  <label for="authEmail">Correo electrónico</label>
+  <input type="email" id="authEmail" placeholder="tu@correo.com" autocomplete="email">
+
+  <label for="authPassword">Contraseña</label>
+  <input type="password" id="authPassword" placeholder="Mínimo 6 caracteres" autocomplete="current-password">
+
+  <div id="authError" class="error"></div>
+  <button class="btn btn-primary" id="authBtn" onclick="submitAuth()">Iniciar sesión</button>
+  <p id="authNote" class="auth-note hidden"></p>
+</div>
+
+<!-- ===== 2) APP (solo se muestra con la sesión iniciada) ===== -->
+<div id="app" class="hidden">
+  <header>
+    <button class="back hidden" id="backBtn" onclick="goBack()">←</button>
+    <div class="brand">
+      <img class="brand-icon" src="logo-icon.png" alt="">
+      <h1 id="headerTitle">Changuitas</h1>
+    </div>
+    <button class="btn-header" onclick="showScreen('post')">+ Publicar tarea</button>
+  </header>
+
+  <main id="main"></main>
+
+  <button class="fab" id="fab" onclick="showScreen('post')" aria-label="Publicar tarea">+</button>
+
+  <nav>
+    <img class="nav-logo" src="logo.png" alt="Changuita">
+    <div id="navHome" class="active" onclick="showScreen('feed')"><span class="icon">⌂</span>Inicio</div>
+    <div id="navMaterials" onclick="showScreen('materials')"><span class="icon">⚒</span>Materiales</div>
+    <div id="navTasks" onclick="showScreen('myTasks')"><span class="icon">☰</span>Mis tareas</div>
+    <div id="navProfile" onclick="showScreen('profile')"><span class="icon">☺</span>Perfil</div>
+  </nav>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+// =========================================================================
+// CONFIGURACIÓN
+// Mientras tenga los valores "TU_...", la app funciona en MODO DEMOSTRACIÓN
+// (cuentas y tareas guardadas solo en este navegador). Cuando pegues tus datos
+// reales de Firebase pasa sola a login real y tareas compartidas entre usuarios.
+// =========================================================================
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_PROYECTO.firebaseapp.com",
+  projectId: "TU_PROYECTO",
+  storageBucket: "TU_PROYECTO.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId: "TU_APP_ID"
+};
+const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
+
+// Datos de la sección Materiales: son de EJEMPLO, cambialos por los reales
+const DESCUENTO_CORRALON = 10;   // % de descuento en corralones adheridos
+const DESCUENTO_EMPRESA = 15;    // % de descuento en productos de la empresa
+const LUGARES = ["Corralones", "Ferreterías", "Pinturerías", "Casas de electricidad", "Sanitarios y plomería", "Maderas y aberturas"];
+const CORRALONES = [
+  { nombre: "Corralón Ejemplo 1", detalle: "Cemento, cal, arena, ladrillos y hierros" },
+  { nombre: "Corralón Ejemplo 2", detalle: "Materiales para obra y revestimientos" },
+  { nombre: "Corralón Ejemplo 3", detalle: "Aberturas, techos y sanitarios" }
+];
+const PRODUCTOS_EMPRESA = [
+  { nombre: "Producto de la empresa 1", detalle: "Descripción del producto" },
+  { nombre: "Producto de la empresa 2", detalle: "Descripción del producto" }
+];
+
+// =========================================================================
+// CAPA DE DATOS: dos versiones con la misma interfaz (Firebase o demostración)
+// =========================================================================
+let backend;
+
+if (USA_FIREBASE) {
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const tasksRef = db.collection("changuitas_tasks");
+  const usersRef = db.collection("changuitas_usuarios");
+  let nombrePendiente = null; // evita que al registrarse se muestre el correo en vez del nombre
+
+  backend = {
+    modo: "firebase",
+    onAuth(cb) {
+      auth.onAuthStateChanged(async user => {
+        if (!user) return cb(null);
+        let name = nombrePendiente;
+        if (!name) {
+          try { const doc = await usersRef.doc(user.uid).get(); name = doc.exists ? doc.data().name : null; } catch (e) {}
+        }
+        cb({ uid: user.uid, email: user.email, name: name || user.email });
+      });
+    },
+    async register(name, email, pass) {
+      nombrePendiente = name;
+      try {
+        const cred = await auth.createUserWithEmailAndPassword(email, pass);
+        await usersRef.doc(cred.user.uid).set({ name, email });
+      } finally { nombrePendiente = null; }
+    },
+    login(email, pass) { return auth.signInWithEmailAndPassword(email, pass); },
+    logout() { return auth.signOut(); },
+    subscribeTasks(cb) {
+      tasksRef.orderBy("createdAt", "desc").onSnapshot(
+        snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+        err => console.error("Error de Firebase:", err)
+      );
+    },
+    addTask(t) { return tasksRef.add({ ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
+    // arrayUnion no agrega dos veces el mismo postulante
+    apply(id, applicant) { return tasksRef.doc(id).update({ applicants: firebase.firestore.FieldValue.arrayUnion(applicant) }); },
+    updateTask(id, patch) { return tasksRef.doc(id).update(patch); }
+  };
+} else {
+  const K_USERS = "changuitas_usuarios", K_SESION = "changuitas_sesion", K_TAREAS = "changuitas_tareas";
+  const leer = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? def : v; } catch (e) { return def; } };
+  const guardar = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const hash = async txt => {
+    if (!window.crypto || !crypto.subtle) throw { code: "local/sin-crypto" };
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+  let cbAuth = () => {}, cbTareas = null;
+  const emitir = () => { if (cbTareas) cbTareas(leer(K_TAREAS, [])); };
+  const modificar = (id, fn) => {
+    const ts = leer(K_TAREAS, []);
+    const t = ts.find(x => x.id === id);
+    if (t) { fn(t); guardar(K_TAREAS, ts); emitir(); }
+  };
+  window.addEventListener("storage", e => { if (e.key === K_TAREAS) emitir(); });
+
+  const TAREAS_EJEMPLO = [
+    { id: "ej1", title: "Armar mueble de IKEA", desc: "Necesito armar un ropero de 2 puertas hoy en la tarde. Tengo las herramientas básicas.", reward: 15000, status: "abierta", postedBy: "Fernanda R.", postedById: "ej-fernanda", applicants: [{ uid: "ej-carlos", name: "Carlos M.", msg: "Tengo experiencia armando muebles, puedo ir hoy 18hs." }], assignedTo: null, assignedToId: null },
+    { id: "ej2", title: "Repartir volantes", desc: "Repartir 200 volantes en el centro de la ciudad, aprox 2 horas.", reward: 8000, status: "abierta", postedBy: "Juan P.", postedById: "ej-juan", applicants: [], assignedTo: null, assignedToId: null },
+    { id: "ej3", title: "Limpieza de patio", desc: "Cortar pasto y sacar hojas de un patio mediano.", reward: 20000, status: "asignada", postedBy: "Lucía G.", postedById: "ej-lucia", applicants: [{ uid: "ej-diego", name: "Diego S.", msg: "Trabajo de jardinería, disponible el sábado." }], assignedTo: "Diego S.", assignedToId: "ej-diego" }
+  ];
+
+  backend = {
+    modo: "local",
+    onAuth(cb) { cbAuth = cb; cb(leer(K_SESION, null)); },
+    async register(name, email, pass) {
+      email = email.toLowerCase();
+      const users = leer(K_USERS, []);
+      if (users.some(u => u.email === email)) throw { code: "auth/email-already-in-use" };
+      if (pass.length < 6) throw { code: "auth/weak-password" };
+      const uid = "u" + Date.now();
+      users.push({ uid, name, email, hash: await hash(uid + pass) });
+      guardar(K_USERS, users);
+      const sesion = { uid, name, email };
+      guardar(K_SESION, sesion);
+      cbAuth(sesion);
+    },
+    async login(email, pass) {
+      email = email.toLowerCase();
+      const u = leer(K_USERS, []).find(x => x.email === email);
+      if (!u || u.hash !== await hash(u.uid + pass)) throw { code: "auth/invalid-credential" };
+      const sesion = { uid: u.uid, name: u.name, email: u.email };
+      guardar(K_SESION, sesion);
+      cbAuth(sesion);
+    },
+    async logout() { localStorage.removeItem(K_SESION); cbAuth(null); },
+    subscribeTasks(cb) {
+      cbTareas = cb;
+      if (localStorage.getItem(K_TAREAS) === null) guardar(K_TAREAS, TAREAS_EJEMPLO);
+      emitir();
+    },
+    async addTask(t) { const ts = leer(K_TAREAS, []); ts.unshift({ ...t, id: "t" + Date.now() }); guardar(K_TAREAS, ts); emitir(); },
+    async apply(id, applicant) { modificar(id, t => { if (!t.applicants.some(a => a.uid === applicant.uid)) t.applicants.push(applicant); }); },
+    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); }
+  };
+}
+
+// =========================================================================
+// ESTADO Y UTILIDADES
+// =========================================================================
+const $ = id => document.getElementById(id);
+const fmt = n => "$" + Number(n).toLocaleString("es-AR");
+const statusLabel = s => ({ abierta: "Abierta", asignada: "Asignada", completada: "Completada" }[s]);
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+let yo = null;               // usuario con la sesión iniciada: { uid, name, email }
+let tasks = [];
+let currentTaskId = null;
+let currentScreen = "feed";
+let pila = ["feed"];
+let busqueda = "";
+let authMode = "login";
+
+// =========================================================================
+// LOGIN / REGISTRO
+// =========================================================================
+function setAuthMode(mode) {
+  authMode = mode;
+  const reg = mode === "register";
+  $("tabLogin").classList.toggle("active", !reg);
+  $("tabRegister").classList.toggle("active", reg);
+  $("authNameWrap").classList.toggle("hidden", !reg);
+  $("authPassword").autocomplete = reg ? "new-password" : "current-password";
+  $("authBtn").textContent = reg ? "Crear cuenta" : "Iniciar sesión";
+  $("authError").textContent = "";
+}
+
+async function submitAuth() {
+  const name = $("authName").value.trim();
+  const email = $("authEmail").value.trim();
+  const password = $("authPassword").value;
+  const err = $("authError");
+  err.textContent = "";
+
+  if (!email || !password || (authMode === "register" && !name)) { err.textContent = "Completá todos los campos."; return; }
+  if (!/^\S+@\S+\.\S+$/.test(email)) { err.textContent = "Ingresá un correo válido."; return; }
+
+  const btn = $("authBtn");
+  btn.disabled = true;
+  try {
+    if (authMode === "register") await backend.register(name, email, password);
+    else await backend.login(email, password);
+  } catch (e) {
+    err.textContent = traducirError(e.code);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function logout() { backend.logout(); }
+
+function traducirError(code) {
+  return ({
+    "auth/email-already-in-use": "Ese correo ya tiene una cuenta creada.",
+    "auth/invalid-email": "El correo no es válido.",
+    "auth/weak-password": "La contraseña debe tener al menos 6 caracteres.",
+    "auth/user-not-found": "No existe una cuenta con ese correo.",
+    "auth/wrong-password": "Contraseña incorrecta.",
+    "auth/invalid-credential": "Correo o contraseña incorrectos.",
+    "auth/too-many-requests": "Demasiados intentos. Probá de nuevo en unos minutos.",
+    "auth/network-request-failed": "No hay conexión a internet.",
+    "auth/operation-not-allowed": "Falta habilitar el ingreso con correo y contraseña en Firebase (Authentication).",
+    "local/sin-crypto": "Abrí la página desde https o desde localhost para poder crear la cuenta."
+  })[code] || "Ocurrió un error. Intentá de nuevo.";
+}
+
+["authName", "authEmail", "authPassword"].forEach(id =>
+  $(id).addEventListener("keydown", e => { if (e.key === "Enter") submitAuth(); })
+);
+
+// =========================================================================
+// NAVEGACIÓN
+// =========================================================================
+const NAV = { feed: "navHome", materials: "navMaterials", myTasks: "navTasks", profile: "navProfile" };
+const TITULOS = { feed: "Changuitas", materials: "Materiales", post: "Publicar tarea", detail: "Detalle de tarea", myTasks: "Mis tareas", profile: "Perfil" };
+
+function showScreen(screen, push = true) {
+  currentScreen = screen;
+  if (push) pila.push(screen);
+  $("backBtn").classList.toggle("hidden", screen === "feed");
+  $("fab").classList.toggle("hidden", screen !== "feed");
+  Object.values(NAV).forEach(id => $(id).classList.remove("active"));
+  if (NAV[screen]) $(NAV[screen]).classList.add("active");
+  $("headerTitle").textContent = TITULOS[screen] || "Changuitas";
+  render[screen]();
+  $("main").scrollTop = 0;
+}
+
+function goBack() {
+  pila.pop();
+  showScreen(pila[pila.length - 1] || "feed", false);
+}
+
+function openDetail(id) { currentTaskId = id; showScreen("detail"); }
+
+// =========================================================================
+// PANTALLAS
+// =========================================================================
+function tarjeta(t, conDescripcion) {
+  const n = (t.applicants || []).length;
+  return `
+    <div class="card" onclick="openDetail('${t.id}')">
+      <div class="card-top">
+        <span class="card-title">${escapeHtml(t.title)}</span>
+        <span class="badge">${fmt(t.reward)}</span>
+      </div>
+      ${conDescripcion ? `<p class="card-desc">${escapeHtml(t.desc)}</p>` : ""}
+      <div class="card-meta">
+        <span class="status status-${t.status}">${statusLabel(t.status)}</span>
+        <span>${n} postulante${n !== 1 ? "s" : ""}</span>
+      </div>
+    </div>`;
+}
+
+// --- Inicio: todas las tareas ---
+function renderFeed() {
+  $("main").innerHTML = `
+    <input class="search" placeholder="Buscar tareas" value="${escapeHtml(busqueda)}" oninput="filterFeed(this.value)">
+    <div id="feedList" class="grid"></div>`;
+  drawFeedList();
+}
+function filterFeed(q) { busqueda = q; drawFeedList(); }
+function drawFeedList() {
+  const q = busqueda.toLowerCase();
+  const list = tasks.filter(t => t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
+  $("feedList").innerHTML = list.length
+    ? list.map(t => tarjeta(t, true)).join("")
+    : `<p class="empty">No hay tareas disponibles todavía.</p>`;
+}
+
+// --- Materiales: 3 apartados ---
+function renderMaterials() {
+  $("main").innerHTML = `
+    <p class="mat-intro">Conseguí lo que necesitás para tu changa y ahorrá con nuestros descuentos.</p>
+
+    <section class="mat-block">
+      <div class="mat-head"><span class="mat-num">1</span><h2>¿Dónde comprar los materiales?</h2></div>
+      <p class="mat-text">Según lo que necesites para la tarea, podés conseguirlo en:</p>
+      <div class="chips">${LUGARES.map(l => `<span class="chip">${escapeHtml(l)}</span>`).join("")}</div>
+    </section>
+
+    <section class="mat-block">
+      <div class="mat-head"><span class="mat-num">2</span><h2>Corralones adheridos</h2><span class="tag-desc">-${DESCUENTO_CORRALON}%</span></div>
+      <p class="mat-text">Si usás estos corralones, tenés ${DESCUENTO_CORRALON}% de descuento en tus materiales.</p>
+      <div class="grid">${CORRALONES.map(c => `
+        <div class="card static">
+          <div class="card-title">${escapeHtml(c.nombre)}</div>
+          <p class="card-desc">${escapeHtml(c.detalle)}</p>
+        </div>`).join("")}</div>
+    </section>
+
+    <section class="mat-block">
+      <div class="mat-head"><span class="mat-num">3</span><h2>Productos de la empresa</h2><span class="tag-desc">-${DESCUENTO_EMPRESA}%</span></div>
+      <p class="mat-text">Si usás productos de la empresa, tenés ${DESCUENTO_EMPRESA}% de descuento.</p>
+      <div class="grid">${PRODUCTOS_EMPRESA.map(p => `
+        <div class="card static">
+          <div class="card-title">${escapeHtml(p.nombre)}</div>
+          <p class="card-desc">${escapeHtml(p.detalle)}</p>
+        </div>`).join("")}</div>
+    </section>`;
+}
+
+// --- Publicar tarea ---
+function renderPost() {
+  $("main").innerHTML = `
+    <label for="postTitle">Título de la tarea</label>
+    <input type="text" id="postTitle" placeholder="Ej: Armar mueble de IKEA">
+    <label for="postDesc">Descripción</label>
+    <textarea id="postDesc" placeholder="Describí qué necesitás que se haga"></textarea>
+    <label for="postReward">Recompensa ofrecida (ARS)</label>
+    <input type="number" id="postReward" placeholder="Ej: 15000" min="0">
+    <div id="postError" class="error"></div>
+    <button class="btn btn-primary" id="postBtn" onclick="submitTask()">Publicar tarea</button>`;
+}
+
+async function submitTask() {
+  const title = $("postTitle").value.trim();
+  const desc = $("postDesc").value.trim();
+  const reward = $("postReward").value;
+  if (!title || !desc || !reward || Number(reward) <= 0) {
+    $("postError").textContent = "Completá todos los campos con datos válidos.";
+    return;
+  }
+  const btn = $("postBtn");
+  btn.disabled = true; btn.textContent = "Publicando...";
+  try {
+    await backend.addTask({
+      title, desc, reward: Number(reward), status: "abierta",
+      applicants: [], assignedTo: null, assignedToId: null,
+      postedBy: yo.name, postedById: yo.uid
+    });
+    showScreen("feed");
+  } catch (e) {
+    $("postError").textContent = "No se pudo publicar: " + (e.message || "error desconocido");
+    btn.disabled = false; btn.textContent = "Publicar tarea";
+  }
+}
+
+// --- Detalle de tarea ---
+function renderDetail() {
+  const t = tasks.find(x => x.id === currentTaskId);
+  if (!t) { $("main").innerHTML = `<p class="empty">Tarea no encontrada.</p>`; return; }
+
+  const postulantes = t.applicants || [];
+  const esMia = t.postedById === yo.uid;                        // la publiqué yo
+  const yaMePostule = postulantes.some(a => a.uid === yo.uid);  // ya estoy en la lista
+  const fuiElegido = t.assignedToId === yo.uid;
+
+  let acciones = "";
+  if (t.status === "abierta") {
+    acciones = `
+      <div class="section-label">Postulantes (${postulantes.length})</div>
+      ${postulantes.length === 0 ? `<p class="empty-inline">Aún nadie se postuló.</p>` : postulantes.map((a, i) => `
+        <div class="applicant">
+          <div>
+            <div class="applicant-name">${escapeHtml(a.name)}${a.uid === yo.uid ? " (vos)" : ""}</div>
+            <div class="applicant-msg">${escapeHtml(a.msg)}</div>
+          </div>
+          ${esMia ? `<button class="btn btn-secondary btn-small" onclick="selectCandidate(${i})">Elegir</button>` : ""}
+        </div>`).join("")}
+      ${esMia
+        ? `<p class="empty-inline">Es tu tarea: elegí a un postulante de la lista.</p>`
+        : yaMePostule
+          ? `<button class="btn btn-primary" disabled>Ya te postulaste</button>`
+          : `<button class="btn btn-primary" onclick="this.disabled = true; applyToTask()">Postularme a esta tarea</button>`}`;
+  } else if (t.status === "asignada") {
+    acciones = `
+      <div class="section-label">Asignada a</div>
+      <p style="font-weight:600;">${escapeHtml(t.assignedTo)}</p>
+      ${esMia
+        ? `<button class="btn btn-primary" onclick="confirmAndPay()">Confirmar cumplimiento y pagar</button>`
+        : `<p class="empty-inline">${fuiElegido ? "¡Te eligieron para esta tarea! Esperando que quien la publicó confirme el cumplimiento." : "Esta tarea ya fue asignada."}</p>`}`;
+  } else {
+    acciones = `
+      <div class="section-label">Estado</div>
+      <p style="font-weight:600; color:#3b6d11;">✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo)}.</p>`;
+  }
+
+  $("main").innerHTML = `
+    <div class="detail-wrap">
+      <span class="status status-${t.status}">${statusLabel(t.status)}</span>
+      <div class="detail-title" style="margin-top:10px;">${escapeHtml(t.title)}</div>
+      <p class="applicant-msg" style="margin-bottom:6px;">Publicada por ${escapeHtml(t.postedBy || "—")}</p>
+      <div class="detail-reward">${fmt(t.reward)}</div>
+      <div class="detail-desc">${escapeHtml(t.desc)}</div>
+      ${acciones}
+    </div>`;
+}
+
+// Además de ocultar los botones, cada acción vuelve a validar: aunque alguien
+// fuerce el botón desde la consola, no puede postularse a su tarea ni dos veces.
+async function applyToTask() {
+  const t = tasks.find(x => x.id === currentTaskId);
+  if (!t || t.status !== "abierta" || t.postedById === yo.uid) return;
+  if ((t.applicants || []).some(a => a.uid === yo.uid)) return;
+  await backend.apply(t.id, { uid: yo.uid, name: yo.name, msg: "¡Interesado en realizar esta tarea!" });
+}
+
+async function selectCandidate(i) {
+  const t = tasks.find(x => x.id === currentTaskId);
+  if (!t || t.status !== "abierta" || t.postedById !== yo.uid) return;
+  const a = (t.applicants || [])[i];
+  if (!a) return;
+  await backend.updateTask(t.id, { status: "asignada", assignedTo: a.name, assignedToId: a.uid });
+}
+
+async function confirmAndPay() {
+  const t = tasks.find(x => x.id === currentTaskId);
+  if (!t || t.status !== "asignada" || t.postedById !== yo.uid) return;
+  await backend.updateTask(t.id, { status: "completada" });
+}
+
+// --- Mis tareas ---
+function renderMyTasks() {
+  const mias = tasks.filter(t => t.postedById === yo.uid);
+  $("main").innerHTML = mias.length
+    ? `<div class="section-label" style="margin-top:0">Tareas que publicaste</div><div class="grid">${mias.map(t => tarjeta(t, false)).join("")}</div>`
+    : `<p class="empty">No publicaste tareas todavía.</p>`;
+}
+
+// --- Perfil ---
+function renderProfile() {
+  const mias = tasks.filter(t => t.postedById === yo.uid);
+  const postulaciones = tasks.filter(t => (t.applicants || []).some(a => a.uid === yo.uid)).length;
+  $("main").innerHTML = `
+    <div class="profile-head">
+      <div class="avatar">${escapeHtml(yo.name.slice(0, 2).toUpperCase())}</div>
+      <p class="profile-name">${escapeHtml(yo.name)}</p>
+      <p class="profile-mail">${escapeHtml(yo.email || "")}</p>
+    </div>
+    <div class="section-label">Resumen</div>
+    <div class="card resumen">
+      <div class="card-meta"><span>Tareas publicadas</span><span>${mias.length}</span></div>
+      <div class="card-meta"><span>Tareas completadas</span><span>${mias.filter(t => t.status === "completada").length}</span></div>
+      <div class="card-meta"><span>Postulaciones</span><span>${postulaciones}</span></div>
+    </div>
+    <button class="btn btn-secondary" onclick="logout()">Cerrar sesión</button>`;
+}
+
+const render = { feed: renderFeed, materials: renderMaterials, post: renderPost, detail: renderDetail, myTasks: renderMyTasks, profile: renderProfile };
+
+// =========================================================================
+// ARRANQUE: si no hay sesión se muestra el login; si la hay, entra a la app
+// =========================================================================
+if (backend.modo === "local") {
+  $("authNote").textContent = "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
+  $("authNote").classList.remove("hidden");
+}
+
+backend.subscribeTasks(list => {
+  tasks = list;
+  if (!yo || currentScreen === "post") return;   // no borrar lo que se está escribiendo
+  if (currentScreen === "feed") drawFeedList();   // no perder el foco del buscador
+  else render[currentScreen]();
+});
+
+backend.onAuth(user => {
+  yo = user;
+  if (user) {
+    $("authScreen").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    pila = ["feed"];
+    showScreen("feed", false);
+  } else {
+    $("app").classList.add("hidden");
+    $("authScreen").classList.remove("hidden");
+    $("authPassword").value = "";
+  }
+});
+</script>
+
+</body>
+</html>
