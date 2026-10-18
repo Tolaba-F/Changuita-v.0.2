@@ -56,8 +56,12 @@
     <div id="navMaterials" onclick="showScreen('materials')"><span class="icon">⚒</span>Materiales</div>
     <div id="navTasks" onclick="showScreen('myTasks')"><span class="icon">☰</span>Mis tareas</div>
     <div id="navProfile" onclick="showScreen('profile')"><span class="icon">☺</span>Perfil</div>
+    <p class="nav-address">Av. Caseros 3365</p>
   </nav>
 </div>
+
+<!-- Pie de página con la dirección (visible debajo de la app) -->
+<footer id="siteFooter">Av. Caseros 3365</footer>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -70,12 +74,12 @@
 // reales de Firebase pasa sola a login real y tareas compartidas entre usuarios.
 // =========================================================================
 const firebaseConfig = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.appspot.com",
-  messagingSenderId: "TU_SENDER_ID",
-  appId: "TU_APP_ID"
+  apiKey: "AIzaSyBMSz--Ajb8FDFs6DSWfXmUBmFC76nK9cY",
+  authDomain: "changuita-d8c62.firebaseapp.com",
+  projectId: "changuita-d8c62",
+  storageBucket: "changuita-d8c62.firebasestorage.app",
+  messagingSenderId: "861733747047",
+  appId: "1:861733747047:web:cba5865598fc6855dd57c2"
 };
 const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
 
@@ -180,7 +184,9 @@ if (USA_FIREBASE) {
     async login(email, pass) {
       email = email.toLowerCase();
       const u = leer(K_USERS, []).find(x => x.email === email);
-      if (!u || u.hash !== await hash(u.uid + pass)) throw { code: "auth/invalid-credential" };
+      // En modo demostración las cuentas viven solo en el navegador donde se crearon
+      if (!u) throw { code: "local/sin-cuenta" };
+      if (u.hash !== await hash(u.uid + pass)) throw { code: "auth/wrong-password" };
       const sesion = { uid: u.uid, name: u.name, email: u.email };
       guardar(K_SESION, sesion);
       cbAuth(sesion);
@@ -264,6 +270,9 @@ function traducirError(code) {
     "auth/too-many-requests": "Demasiados intentos. Probá de nuevo en unos minutos.",
     "auth/network-request-failed": "No hay conexión a internet.",
     "auth/operation-not-allowed": "Falta habilitar el ingreso con correo y contraseña en Firebase (Authentication).",
+    "auth/invalid-api-key": "La apiKey de firebaseConfig no es válida. Copiala de nuevo desde Firebase.",
+    "auth/api-key-not-valid.-please-pass-a-valid-api-key.": "La apiKey de firebaseConfig no es válida. Copiala de nuevo desde Firebase.",
+    "local/sin-cuenta": "No hay ninguna cuenta con ese correo en este navegador. En modo demostración las cuentas se guardan solo en el navegador donde se crearon: creala acá o conectá Firebase para usarla en todos tus dispositivos.",
     "local/sin-crypto": "Abrí la página desde https o desde localhost para poder crear la cuenta."
   })[code] || "Ocurrió un error. Intentá de nuevo.";
 }
@@ -457,7 +466,9 @@ async function applyToTask() {
   const t = tasks.find(x => x.id === currentTaskId);
   if (!t || t.status !== "abierta" || t.postedById === yo.uid) return;
   if ((t.applicants || []).some(a => a.uid === yo.uid)) return;
-  await backend.apply(t.id, { uid: yo.uid, name: yo.name, msg: "¡Interesado en realizar esta tarea!" });
+  try {
+    await backend.apply(t.id, { uid: yo.uid, name: yo.name, msg: "¡Interesado en realizar esta tarea!" });
+  } catch (e) { avisarError(e); }
 }
 
 async function selectCandidate(i) {
@@ -465,13 +476,25 @@ async function selectCandidate(i) {
   if (!t || t.status !== "abierta" || t.postedById !== yo.uid) return;
   const a = (t.applicants || [])[i];
   if (!a) return;
-  await backend.updateTask(t.id, { status: "asignada", assignedTo: a.name, assignedToId: a.uid });
+  try {
+    await backend.updateTask(t.id, { status: "asignada", assignedTo: a.name, assignedToId: a.uid });
+  } catch (e) { avisarError(e); }
 }
 
 async function confirmAndPay() {
   const t = tasks.find(x => x.id === currentTaskId);
   if (!t || t.status !== "asignada" || t.postedById !== yo.uid) return;
-  await backend.updateTask(t.id, { status: "completada" });
+  try {
+    await backend.updateTask(t.id, { status: "completada" });
+  } catch (e) { avisarError(e); }
+}
+
+// Si Firebase rechaza la acción (sin internet o sin permiso), se avisa y se
+// vuelve a dibujar la pantalla para que los botones no queden bloqueados.
+function avisarError(e) {
+  console.error(e);
+  alert("No se pudo completar la acción. Revisá tu conexión e intentá de nuevo.");
+  if (currentScreen === "detail") renderDetail();
 }
 
 // --- Mis tareas ---
@@ -498,6 +521,9 @@ function renderProfile() {
       <div class="card-meta"><span>Tareas completadas</span><span>${mias.filter(t => t.status === "completada").length}</span></div>
       <div class="card-meta"><span>Postulaciones</span><span>${postulaciones}</span></div>
     </div>
+    <p class="modo-conexion">${backend.modo === "firebase"
+      ? "🟢 En línea: tus tareas se ven en todos los dispositivos"
+      : "🟠 Modo demostración: los datos están solo en este navegador"}</p>
     <button class="btn btn-secondary" onclick="logout()">Cerrar sesión</button>`;
 }
 
@@ -508,6 +534,11 @@ const render = { feed: renderFeed, materials: renderMaterials, post: renderPost,
 // =========================================================================
 if (backend.modo === "local") {
   $("authNote").textContent = "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
+  $("authNote").classList.remove("hidden");
+}
+// Firebase no permite iniciar sesión si la página se abre con doble clic (file://)
+if (backend.modo === "firebase" && location.protocol === "file:") {
+  $("authNote").textContent = "Para usar la versión en línea abrí la página desde un enlace (https) o con Live Server. Con doble clic sobre el archivo, Firebase no deja iniciar sesión.";
   $("authNote").classList.remove("hidden");
 }
 
