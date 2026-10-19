@@ -84,6 +84,7 @@ const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
 // Datos de la sección Materiales: son de EJEMPLO, cambialos por los reales
 const DESCUENTO_CORRALON = 10;   // % de descuento en corralones adheridos
 const DESCUENTO_EMPRESA = 15;    // % de descuento en productos de la empresa
+const DIAS_VIDA = 7;             // NUEVO: días que una tarea completada sigue visible antes de borrarse
 const LUGARES = ["Corralones", "Ferreterías", "Pinturerías", "Casas de electricidad", "Sanitarios y plomería", "Maderas y aberturas"];
 const CORRALONES = [
   { nombre: "Corralón Ejemplo 1", detalle: "Cemento, cal, arena, ladrillos y hierros" },
@@ -138,7 +139,8 @@ if (USA_FIREBASE) {
     addTask(t) { return tasksRef.add({ ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
     // arrayUnion no agrega dos veces el mismo postulante
     apply(id, applicant) { return tasksRef.doc(id).update({ applicants: firebase.firestore.FieldValue.arrayUnion(applicant) }); },
-    updateTask(id, patch) { return tasksRef.doc(id).update(patch); }
+    updateTask(id, patch) { return tasksRef.doc(id).update(patch); },
+    deleteTask(id) { return tasksRef.doc(id).delete(); }   // NUEVO
   };
 } else {
   const K_USERS = "changuitas_usuarios", K_SESION = "changuitas_sesion", K_TAREAS = "changuitas_tareas";
@@ -197,7 +199,8 @@ if (USA_FIREBASE) {
     },
     async addTask(t) { const ts = leer(K_TAREAS, []); ts.unshift({ ...t, id: "t" + Date.now() }); guardar(K_TAREAS, ts); emitir(); },
     async apply(id, applicant) { modificar(id, t => { if (!t.applicants.some(a => a.uid === applicant.uid)) t.applicants.push(applicant); }); },
-    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); }
+    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); },
+    async deleteTask(id) { guardar(K_TAREAS, leer(K_TAREAS, []).filter(t => t.id !== id)); emitir(); }   // NUEVO
   };
 }
 
@@ -210,6 +213,12 @@ const statusLabel = s => ({ abierta: "Abierta", asignada: "Asignada", completada
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+// NUEVO: utilidades para calificación y eliminación automática
+const DIA_MS = 86400000;
+const vencida = t => t.status === "completada" && t.completedAt && (Date.now() - t.completedAt) > DIAS_VIDA * DIA_MS;
+const diasRestantes = t => Math.max(0, Math.ceil((t.completedAt + DIAS_VIDA * DIA_MS - Date.now()) / DIA_MS));
+const estrellas = n => "★".repeat(n) + "☆".repeat(5 - n);
 
 let yo = null;               // usuario con la sesión iniciada: { uid, name, email }
 let tasks = [];
@@ -398,6 +407,7 @@ async function submitTask() {
     await backend.addTask({
       title, desc, reward: Number(reward), status: "abierta",
       applicants: [], assignedTo: null, assignedToId: null,
+      rating: null, completedAt: null,   // NUEVO
       postedBy: yo.name, postedById: yo.uid
     });
     showScreen("feed");
@@ -442,9 +452,19 @@ function renderDetail() {
         ? `<button class="btn btn-primary" onclick="confirmAndPay()">Confirmar cumplimiento y pagar</button>`
         : `<p class="empty-inline">${fuiElegido ? "¡Te eligieron para esta tarea! Esperando que quien la publicó confirme el cumplimiento." : "Esta tarea ya fue asignada."}</p>`}`;
   } else {
+    // NUEVO: calificación y aviso de eliminación
+    const puedeCalificar = esMia && !t.rating;
     acciones = `
       <div class="section-label">Estado</div>
-      <p style="font-weight:600; color:#3b6d11;">✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo)}.</p>`;
+      <p style="font-weight:600; color:#3b6d11;">✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo)}.</p>
+      <div class="section-label">Calificación</div>
+      ${t.rating
+        ? `<p class="estrellas">${estrellas(t.rating)}</p>`
+        : puedeCalificar
+          ? `<p class="applicant-msg">¿Cómo te fue con ${escapeHtml(t.assignedTo)}? Calificalo:</p>
+             <div class="estrellas">${[1,2,3,4,5].map(i => `<span style="cursor:pointer;font-size:30px;color:#f5a623" onclick="calificar(${i})">☆</span>`).join("")}</div>`
+          : `<p class="empty-inline">Todavía sin calificar.</p>`}
+      <p class="applicant-msg" style="margin-top:12px;">🗑 Esta tarea se elimina automáticamente en ${diasRestantes(t)} día(s).</p>`;
   }
 
   $("main").innerHTML = `
@@ -483,7 +503,17 @@ async function confirmAndPay() {
   const t = tasks.find(x => x.id === currentTaskId);
   if (!t || t.status !== "asignada" || t.postedById !== yo.uid) return;
   try {
-    await backend.updateTask(t.id, { status: "completada" });
+    await backend.updateTask(t.id, { status: "completada", completedAt: Date.now() });   // NUEVO: completedAt
+  } catch (e) { avisarError(e); }
+}
+
+// NUEVO: calificar al que hizo la tarea (solo quien la publicó, una sola vez)
+async function calificar(n) {
+  const t = tasks.find(x => x.id === currentTaskId);
+  if (!t || t.status !== "completada" || t.postedById !== yo.uid || t.rating) return;
+  if (!(n >= 1 && n <= 5)) return;
+  try {
+    await backend.updateTask(t.id, { rating: n });
   } catch (e) { avisarError(e); }
 }
 
@@ -507,6 +537,9 @@ function renderMyTasks() {
 function renderProfile() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
   const postulaciones = tasks.filter(t => (t.applicants || []).some(a => a.uid === yo.uid)).length;
+  // NUEVO: promedio de calificaciones recibidas
+  const recibidas = tasks.filter(t => t.assignedToId === yo.uid && t.rating);
+  const promedio = recibidas.length ? (recibidas.reduce((s, t) => s + t.rating, 0) / recibidas.length).toFixed(1) : "–";
   $("main").innerHTML = `
     <div class="profile-head">
       <div class="avatar">${escapeHtml(yo.name.slice(0, 2).toUpperCase())}</div>
@@ -518,6 +551,7 @@ function renderProfile() {
       <div class="card-meta"><span>Tareas publicadas</span><span>${mias.length}</span></div>
       <div class="card-meta"><span>Tareas completadas</span><span>${mias.filter(t => t.status === "completada").length}</span></div>
       <div class="card-meta"><span>Postulaciones</span><span>${postulaciones}</span></div>
+      <div class="card-meta"><span>Calificación promedio</span><span>★ ${promedio}</span></div>
     </div>
     <p class="modo-conexion">${backend.modo === "firebase"
       ? "🟢 En línea: tus tareas se ven en todos los dispositivos"
@@ -541,7 +575,9 @@ if (backend.modo === "firebase" && location.protocol === "file:") {
 }
 
 backend.subscribeTasks(list => {
-  tasks = list;
+  // NUEVO: las tareas vencidas se ocultan siempre; las borra de la base quien las publicó
+  list.filter(vencida).forEach(t => { if (yo && t.postedById === yo.uid) backend.deleteTask(t.id).catch(() => {}); });
+  tasks = list.filter(t => !vencida(t));
   if (!yo || currentScreen === "post") return;   // no borrar lo que se está escribiendo
   if (currentScreen === "feed") drawFeedList();   // no perder el foco del buscador
   else render[currentScreen]();
