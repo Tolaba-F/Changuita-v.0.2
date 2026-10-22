@@ -136,7 +136,8 @@ if (USA_FIREBASE) {
     addTask(t) { return tasksRef.add({ ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
     // arrayUnion no agrega dos veces el mismo postulante
     apply(id, applicant) { return tasksRef.doc(id).update({ applicants: firebase.firestore.FieldValue.arrayUnion(applicant) }); },
-    updateTask(id, patch) { return tasksRef.doc(id).update(patch); }
+    updateTask(id, patch) { return tasksRef.doc(id).update(patch); },
+    deleteTask(id) { return tasksRef.doc(id).delete(); }
   };
 } else {
   const K_USERS = "changuitas_usuarios", K_SESION = "changuitas_sesion", K_TAREAS = "changuitas_tareas";
@@ -195,7 +196,12 @@ if (USA_FIREBASE) {
     },
     async addTask(t) { const ts = leer(K_TAREAS, []); ts.unshift({ ...t, id: "t" + Date.now() }); guardar(K_TAREAS, ts); emitir(); },
     async apply(id, applicant) { modificar(id, t => { if (!t.applicants.some(a => a.uid === applicant.uid)) t.applicants.push(applicant); }); },
-    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); }
+    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); },
+    async deleteTask(id) {
+      const ts = leer(K_TAREAS, []).filter(t => t.id !== id);
+      guardar(K_TAREAS, ts);
+      emitir();
+    }
   };
 }
 
@@ -485,6 +491,26 @@ async function confirmAndPay() {
   } catch (e) { avisarError(e); }
 }
 
+async function deleteTask(id) {
+  const t = tasks.find(x => x.id === id);
+  // Solo quien publicó la tarea puede eliminarla.
+  if (!t || !yo || t.postedById !== yo.uid) {
+    alert("Solo podés eliminar las tareas que publicaste.");
+    return;
+  }
+  const confirmar = confirm(`¿Querés eliminar la tarea "${t.title}"? Esta acción no se puede deshacer.`);
+  if (!confirmar) return;
+
+  try {
+    await backend.deleteTask(id);
+    busqueda = "";
+    pila = ["feed"];
+    showScreen(currentScreen === "myTasks" ? "myTasks" : "feed", false);
+  } catch (e) {
+    avisarError(e);
+  }
+}
+
 // Si Firebase rechaza la acción (sin internet o sin permiso), se avisa y se
 // vuelve a dibujar la pantalla para que los botones no queden bloqueados.
 function avisarError(e) {
@@ -497,7 +523,12 @@ function avisarError(e) {
 function renderMyTasks() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
   $("main").innerHTML = mias.length
-    ? `<div class="section-label" style="margin-top:0">Tareas que publicaste</div><div class="grid">${mias.map(t => tarjeta(t, false)).join("")}</div>`
+    ? `<div class="section-label" style="margin-top:0">Tareas que publicaste</div>
+       <div class="grid">${mias.map(t => `
+         <div>
+           ${tarjeta(t, false)}
+           <button class="btn btn-danger btn-small delete-task-list" onclick="event.stopPropagation(); deleteTask('${t.id}')">🗑 Eliminar tarea</button>
+         </div>`).join("")}</div>`
     : `<p class="empty">No publicaste tareas todavía.</p>`;
 }
 
