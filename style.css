@@ -234,3 +234,13 @@ nav .icon { font-size: 19px; display: block; margin-bottom: 2px; }
   #authScreen { width: 100%; border-radius: 0; box-shadow: none; min-height: 100vh; min-height: 100dvh; padding: 28px 22px; }
   #app { width: 100%; border-radius: 0; box-shadow: none; height: 100vh; height: 100dvh; }
 }
+/* Botón para eliminar tareas propias */
+.delete-task-list {
+  width: 100%;
+  margin-top: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.btn-danger:hover {
+  background: #fff1f0;
+}
