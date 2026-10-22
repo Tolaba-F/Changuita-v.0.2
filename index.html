@@ -7,18 +7,12 @@
 <title>Changuitas</title>
 <link rel="icon" href="logo-icon.png">
 <link rel="stylesheet" href="style.css">
-<script>
-// Aplica el fondo guardado (claro u oscuro) antes de dibujar la página, para que no parpadee
-try { if (localStorage.getItem("changuitas_tema") === "oscuro") document.documentElement.setAttribute("data-theme", "dark"); } catch (e) {}
-</script>
 </head>
 <body>
 
 <!-- ===== 1) INICIO DE SESIÓN / REGISTRO (es lo primero que se ve al abrir el enlace) ===== -->
 <div id="authScreen">
-  <button class="iconbtn auth-theme" id="themeBtnAuth" onclick="alternarTema()" aria-label="Cambiar fondo claro u oscuro"></button>
-  <img class="auth-logo logo-claro" src="logo.png" alt="Changuita - Trabajo rápido y cerca">
-  <img class="auth-logo logo-oscuro" src="logo-oscuro.png" alt="">
+  <img class="auth-logo" src="logo.png" alt="Changuita - Trabajo rápido y cerca">
   <p class="slogan" id="authSlogan"></p>
 
   <div class="auth-tabs">
@@ -50,7 +44,6 @@ try { if (localStorage.getItem("changuitas_tema") === "oscuro") document.documen
       <img class="brand-icon" src="logo-icon.png" alt="">
       <h1 id="headerTitle">Changuitas</h1>
     </div>
-    <button class="iconbtn" id="themeBtn" onclick="alternarTema()" aria-label="Cambiar fondo claro u oscuro"></button>
     <button class="btn-header" onclick="showScreen('post')">+ Publicar tarea</button>
   </header>
 
@@ -59,18 +52,13 @@ try { if (localStorage.getItem("changuitas_tema") === "oscuro") document.documen
   <button class="fab" id="fab" onclick="showScreen('post')" aria-label="Publicar tarea">+</button>
 
   <nav>
-    <img class="nav-logo logo-claro" src="logo.png" alt="Changuita">
-    <img class="nav-logo logo-oscuro" src="logo-oscuro.png" alt="">
+    <img class="nav-logo" src="logo.png" alt="Changuita">
     <div id="navHome" class="active" onclick="showScreen('feed')"><span class="icon">⌂</span>Inicio</div>
     <div id="navMaterials" onclick="showScreen('materials')"><span class="icon">⚒</span>Materiales</div>
     <div id="navTasks" onclick="showScreen('myTasks')"><span class="icon">☰</span>Mis tareas</div>
     <div id="navProfile" onclick="showScreen('profile')"><span class="icon">☺</span>Perfil</div>
-    <p class="nav-address">Av. Caseros 3365</p>
   </nav>
 </div>
-
-<!-- Pie de página con la dirección (visible debajo de la app) -->
-<footer id="siteFooter">Av. Caseros 3365</footer>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -285,10 +273,6 @@ function tiempoRestante(ms) {
   return "menos de 1 hora";
 }
 
-const ICONO = {
-  luna: '<svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
-  sol: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
-};
 const PIN = '<svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
 
 let yo = null;               // usuario con la sesión iniciada: { uid, name, email }
@@ -315,25 +299,6 @@ function refrescar() {
   if (currentScreen === "feed") drawFeedList();
   else render[currentScreen]();
 }
-
-// =========================================================================
-// FONDO CLARO / OSCURO
-// =========================================================================
-function temaGuardado() {
-  try { return localStorage.getItem("changuitas_tema") === "oscuro" ? "oscuro" : "claro"; } catch (e) { return "claro"; }
-}
-function temaActual() { return document.documentElement.dataset.theme === "dark" ? "oscuro" : "claro"; }
-function aplicarTema(t, guardar = true) {
-  document.documentElement.dataset.theme = t === "oscuro" ? "dark" : "light";
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = t === "oscuro" ? "#121212" : "#0046b4";
-  const icono = t === "oscuro" ? ICONO.sol : ICONO.luna;
-  $("themeBtn").innerHTML = icono;
-  $("themeBtnAuth").innerHTML = icono;
-  if (guardar) { try { localStorage.setItem("changuitas_tema", t); } catch (e) {} }
-  if (yo && currentScreen === "profile") renderProfile();
-}
-function alternarTema() { aplicarTema(temaActual() === "oscuro" ? "claro" : "oscuro"); }
 
 // =========================================================================
 // LOGIN / REGISTRO
@@ -768,106 +733,4 @@ function avisarError(e) {
   if (currentScreen === "detail") renderDetail();
 }
 
-// --- Mis tareas: publicadas / postuladas ---
-function renderMyTasks() {
-  const mias = tasks.filter(t => t.postedById === yo.uid);
-  const postuladas = tasks.filter(t => t.postedById !== yo.uid && ((t.applicants || []).some(a => a.uid === yo.uid) || t.assignedToId === yo.uid));
-  const lista = misTab === "publicadas" ? mias : postuladas;
-  $("main").innerHTML = `
-    <div class="auth-tabs">
-      <div class="auth-tab ${misTab === "publicadas" ? "active" : ""}" onclick="setMisTab('publicadas')">Publicadas (${mias.length})</div>
-      <div class="auth-tab ${misTab === "postuladas" ? "active" : ""}" onclick="setMisTab('postuladas')">Postuladas (${postuladas.length})</div>
-    </div>
-    ${lista.length
-      ? `<div class="grid">${lista.map(t => tarjeta(t, false)).join("")}</div>`
-      : (misTab === "publicadas"
-        ? `<div class="empty-box"><img src="logo-icon.png" alt=""><h3>Todavía no publicaste nada</h3><p>Contá qué necesitás y recibí postulantes de tu zona.</p><button class="btn btn-primary" onclick="showScreen('post')">+ Publicá tu primera changa</button></div>`
-        : `<div class="empty-box"><img src="logo-icon.png" alt=""><h3>Todavía no te postulaste</h3><p>Mirá las tareas disponibles y postulate a la que te interese.</p><button class="btn btn-primary" onclick="showScreen('feed')">Ver tareas</button></div>`)}`;
-}
-
-// --- Perfil: mi calificación, apariencia y resumen ---
-function renderProfile() {
-  const mias = tasks.filter(t => t.postedById === yo.uid);
-  const postulaciones = tasks.filter(t => (t.applicants || []).some(a => a.uid === yo.uid)).length;
-  const oscuro = temaActual() === "oscuro";
-  cargarRep([yo.uid]);
-  $("main").innerHTML = `
-    <div class="profile-head">
-      <div class="avatar">${escapeHtml(yo.name.slice(0, 2).toUpperCase())}</div>
-      <p class="profile-name">${escapeHtml(yo.name)}</p>
-      <p class="profile-mail">${escapeHtml(yo.email || "")}</p>
-      <p class="profile-rep">${repTxt(yo.uid) || ""}</p>
-    </div>
-    <div class="section-label">Apariencia</div>
-    <div class="card static" style="max-width:340px">
-      <div class="card-desc" style="margin:0">Elegí el fondo de la app</div>
-      <div class="seg">
-        <div class="${oscuro ? "" : "on"}" onclick="aplicarTema('claro')">${ICONO.sol} Claro</div>
-        <div class="${oscuro ? "on" : ""}" onclick="aplicarTema('oscuro')">${ICONO.luna} Oscuro</div>
-      </div>
-    </div>
-    <div class="section-label">Resumen</div>
-    <div class="card resumen">
-      <div class="card-meta"><span>Tareas publicadas</span><span>${mias.length}</span></div>
-      <div class="card-meta"><span>Tareas completadas</span><span>${mias.filter(t => t.status === "completada").length}</span></div>
-      <div class="card-meta"><span>Postulaciones</span><span>${postulaciones}</span></div>
-    </div>
-    <p class="modo-conexion">${backend.modo === "firebase"
-      ? "🟢 En línea: tus tareas se ven en todos los dispositivos"
-      : "🟠 Modo demostración: los datos están solo en este navegador"}</p>
-    <button class="btn btn-secondary" onclick="logout()">Cerrar sesión</button>`;
-}
-
-const render = { feed: renderFeed, materials: renderMaterials, post: renderPost, detail: renderDetail, myTasks: renderMyTasks, profile: renderProfile };
-
-// =========================================================================
-// ARRANQUE: si no hay sesión se muestra el login; si la hay, entra a la app
-// =========================================================================
-aplicarTema(temaGuardado(), false);
-$("authSlogan").innerHTML = `${escapeHtml(FRASE)} <b>${escapeHtml(FRASE_DESTACADA)}</b>`;
-
-if (backend.modo === "local") {
-  $("authNote").textContent = "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
-  $("authNote").classList.remove("hidden");
-}
-// Firebase no permite iniciar sesión si la página se abre con doble clic (file://)
-if (backend.modo === "firebase" && location.protocol === "file:") {
-  $("authNote").textContent = "Para usar la versión en línea abrí la página desde un enlace (https) o con Live Server. Con doble clic sobre el archivo, Firebase no deja iniciar sesión.";
-  $("authNote").classList.remove("hidden");
-}
-
-backend.subscribeTasks(list => {
-  tareasCrudas = list;
-  procesarTareas();
-  refrescar();
-});
-
-backend.onAuth(user => {
-  yo = user;
-  if (user) {
-    $("authScreen").classList.add("hidden");
-    $("app").classList.remove("hidden");
-    pila = ["feed"];
-    procesarTareas();
-    showScreen("feed", false);
-  } else {
-    $("app").classList.add("hidden");
-    $("authScreen").classList.remove("hidden");
-    $("authPassword").value = "";
-  }
-});
-
-// Si la app queda abierta, cada minuto se revisa si alguna tarea completada ya venció
-setInterval(() => {
-  const antes = tasks.length;
-  procesarTareas();
-  if (tasks.length !== antes) refrescar();
-  if (yo && currentScreen === "detail") {
-    const t = tasks.find(x => x.id === currentTaskId);
-    if (t && t.status === "completada") cargarCalifTarea(t.id, true);
-  }
-}, 60000);
-</script>
-
-</body>
-</html>
+// --- Mis tareas:
