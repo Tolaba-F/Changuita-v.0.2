@@ -244,3 +244,13 @@ nav .icon { font-size: 19px; display: block; margin-bottom: 2px; }
 .btn-danger:hover {
   background: #fff1f0;
 }
+
+
+/* ===== Mejoras: publicar tarea y cartel principal ===== */
+.post-intro { display:flex; align-items:flex-start; gap:11px; padding:13px; margin-bottom:14px; background:var(--azul-suave); border:1px solid #d5e2fa; border-radius:14px; }
+.post-intro-icon { width:36px; height:36px; display:grid; place-items:center; flex-shrink:0; background:#fff; border-radius:11px; font-size:19px; }
+.post-intro strong { display:block; color:var(--azul); font-size:13.5px; margin:1px 0 4px; }
+.post-intro p { font-size:12px; line-height:1.45; color:var(--text2); }
+.zona { padding:10px 12px; background:var(--card); border:1px solid var(--border); border-radius:11px; }
+.hero { background:linear-gradient(135deg, var(--hero1), var(--hero2)); }
+.hero .cta:hover { filter:brightness(.96); }
