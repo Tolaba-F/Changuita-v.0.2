@@ -320,6 +320,7 @@ function tarjeta(t, conDescripcion) {
         <span class="badge">${fmt(t.reward)}</span>
       </div>
       ${conDescripcion ? `<p class="card-desc">${escapeHtml(t.desc)}</p>` : ""}
+      ${t.location ? `<div class="card-meta loc"><span aria-hidden="true">📍</span><span>${escapeHtml(t.location)}</span></div>` : ""}
       <div class="card-meta">
         <span class="status status-${t.status}">${statusLabel(t.status)}</span>
         <span>${n} postulante${n !== 1 ? "s" : ""}</span>
@@ -330,14 +331,19 @@ function tarjeta(t, conDescripcion) {
 // --- Inicio: todas las tareas ---
 function renderFeed() {
   $("main").innerHTML = `
-    <input class="search" placeholder="Buscar tareas" value="${escapeHtml(busqueda)}" oninput="filterFeed(this.value)">
+    <section class="hero">
+      <h2>Tu esfuerzo <span>vale.</span></h2>
+      <p>Con Changuita, conectá con personas que necesitan una mano o encontrá a alguien para realizar esa tarea.</p>
+      <button class="cta" onclick="showScreen('post')">Publicar una tarea</button>
+    </section>
+    <input class="search" placeholder="Buscar tareas o ubicaciones" value="${escapeHtml(busqueda)}" oninput="filterFeed(this.value)">
     <div id="feedList" class="grid"></div>`;
   drawFeedList();
 }
 function filterFeed(q) { busqueda = q; drawFeedList(); }
 function drawFeedList() {
   const q = busqueda.toLowerCase();
-  const list = tasks.filter(t => t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
+  const list = tasks.filter(t => String(t.title || "").toLowerCase().includes(q) || String(t.desc || "").toLowerCase().includes(q) || String(t.location || "").toLowerCase().includes(q));
   $("feedList").innerHTML = list.length
     ? list.map(t => tarjeta(t, true)).join("")
     : `<p class="empty">No hay tareas disponibles todavía.</p>`;
@@ -378,12 +384,19 @@ function renderMaterials() {
 // --- Publicar tarea ---
 function renderPost() {
   $("main").innerHTML = `
+    <div class="post-intro">
+      <div class="post-intro-icon">📍</div>
+      <div><strong>Contá dónde se necesita la ayuda</strong><p>Así las personas pueden saber si les queda cómodo llegar.</p></div>
+    </div>
     <label for="postTitle">Título de la tarea</label>
-    <input type="text" id="postTitle" placeholder="Ej: Armar mueble de IKEA">
+    <input type="text" id="postTitle" placeholder="Ej: Armar un mueble">
     <label for="postDesc">Descripción</label>
     <textarea id="postDesc" placeholder="Describí qué necesitás que se haga"></textarea>
+    <label for="postLocation">Ubicación donde se realizará la tarea</label>
+    <input type="text" id="postLocation" placeholder="Ej: Parque Patricios, CABA o una dirección aproximada" autocomplete="street-address">
+    <p class="hint">Por seguridad, podés indicar barrio y localidad. Compartí la dirección exacta solo si es necesario.</p>
     <label for="postReward">Recompensa ofrecida (ARS)</label>
-    <input type="number" id="postReward" placeholder="Ej: 15000" min="0">
+    <input type="number" id="postReward" placeholder="Ej: 15000" min="1">
     <div id="postError" class="error"></div>
     <button class="btn btn-primary" id="postBtn" onclick="submitTask()">Publicar tarea</button>`;
 }
@@ -391,22 +404,24 @@ function renderPost() {
 async function submitTask() {
   const title = $("postTitle").value.trim();
   const desc = $("postDesc").value.trim();
+  const location = $("postLocation").value.trim();
   const reward = $("postReward").value;
-  if (!title || !desc || !reward || Number(reward) <= 0) {
-    $("postError").textContent = "Completá todos los campos con datos válidos.";
+  if (!title || !desc || !location || !reward || Number(reward) <= 0) {
+    $("postError").textContent = "Completá todos los campos con datos válidos, incluida la ubicación.";
     return;
   }
   const btn = $("postBtn");
   btn.disabled = true; btn.textContent = "Publicando...";
   try {
     await backend.addTask({
-      title, desc, reward: Number(reward), status: "abierta",
+      title, desc, location, reward: Number(reward), status: "abierta",
       applicants: [], assignedTo: null, assignedToId: null,
       postedBy: yo.name, postedById: yo.uid
     });
+    busqueda = "";
     showScreen("feed");
   } catch (e) {
-    $("postError").textContent = "No se pudo publicar: " + (e.message || "error desconocido");
+    $("postError").textContent = "No se pudo publicar (" + (e.code || "error") + "): " + (e.message || "error desconocido");
     btn.disabled = false; btn.textContent = "Publicar tarea";
   }
 }
@@ -458,7 +473,9 @@ function renderDetail() {
       <p class="applicant-msg" style="margin-bottom:6px;">Publicada por ${escapeHtml(t.postedBy || "—")}</p>
       <div class="detail-reward">${fmt(t.reward)}</div>
       <div class="detail-desc">${escapeHtml(t.desc)}</div>
+      ${t.location ? `<div class="zona"><span aria-hidden="true">📍</span><strong>Ubicación:</strong> ${escapeHtml(t.location)}</div>` : `<div class="zona"><span aria-hidden="true">📍</span>Ubicación no especificada en esta publicación antigua.</div>`}
       ${acciones}
+      ${esMia ? `<button class="btn btn-danger" onclick="deleteTask('${t.id}')">🗑 Eliminar tarea</button>` : ""}
     </div>`;
 }
 
@@ -514,8 +531,16 @@ async function deleteTask(id) {
 // Si Firebase rechaza la acción (sin internet o sin permiso), se avisa y se
 // vuelve a dibujar la pantalla para que los botones no queden bloqueados.
 function avisarError(e) {
-  console.error(e);
-  alert("No se pudo completar la acción. Revisá tu conexión e intentá de nuevo.");
+  console.error("Error real de Firebase:", e);
+  const code = e?.code || "sin código";
+  const message = e?.message || "Sin descripción";
+  let tip = "Revisá la conexión e intentá de nuevo.";
+  if (code === "permission-denied" || code === "firestore/permission-denied") {
+    tip = "Firebase rechazó la operación por las reglas de seguridad. Hay que revisar las reglas de Firestore para permitir que solo quien publicó la tarea pueda eliminarla.";
+  } else if (code === "unavailable" || code === "deadline-exceeded") {
+    tip = "Firebase no respondió. Revisá la conexión a internet y el estado del servicio.";
+  }
+  alert("No se pudo completar la acción.\n\nCódigo: " + code + "\nDetalle: " + message + "\n\nQué revisar: " + tip);
   if (currentScreen === "detail") renderDetail();
 }
 
