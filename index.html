@@ -13,7 +13,6 @@
 <!-- ===== 1) INICIO DE SESIÓN / REGISTRO (es lo primero que se ve al abrir el enlace) ===== -->
 <div id="authScreen">
   <img class="auth-logo" src="logo.png" alt="Changuita - Trabajo rápido y cerca">
-  <p class="slogan" id="authSlogan"></p>
 
   <div class="auth-tabs">
     <div class="auth-tab active" id="tabLogin" onclick="setAuthMode('login')">Iniciar sesión</div>
@@ -57,8 +56,12 @@
     <div id="navMaterials" onclick="showScreen('materials')"><span class="icon">⚒</span>Materiales</div>
     <div id="navTasks" onclick="showScreen('myTasks')"><span class="icon">☰</span>Mis tareas</div>
     <div id="navProfile" onclick="showScreen('profile')"><span class="icon">☺</span>Perfil</div>
+    <p class="nav-address">Av. Caseros 3365</p>
   </nav>
 </div>
+
+<!-- Pie de página con la dirección (visible debajo de la app) -->
+<footer id="siteFooter">Av. Caseros 3365</footer>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -67,8 +70,8 @@
 // =========================================================================
 // CONFIGURACIÓN
 // Mientras tenga los valores "TU_...", la app funciona en MODO DEMOSTRACIÓN
-// (cuentas y tareas guardadas solo en este navegador). Con tus datos reales
-// de Firebase pasa sola a login real y tareas compartidas entre usuarios.
+// (cuentas y tareas guardadas solo en este navegador). Cuando pegues tus datos
+// reales de Firebase pasa sola a login real y tareas compartidas entre usuarios.
 // =========================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBMSz--Ajb8FDFs6DSWfXmUBmFC76nK9cY",
@@ -79,14 +82,6 @@ const firebaseConfig = {
   appId: "1:861733747047:web:cba5865598fc6855dd57c2"
 };
 const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
-
-// Frase de Changuitas (aparece en el login y en el banner de Inicio)
-const FRASE = "Tu changa, resuelta";
-const FRASE_DESTACADA = "cerca tuyo";
-
-// Una tarea completada se elimina sola pasado este tiempo.
-// Las calificaciones NO se borran: quedan guardadas.
-const HORAS_HASTA_ELIMINAR = 168;   // 168 horas = 7 días
 
 // Datos de la sección Materiales: son de EJEMPLO, cambialos por los reales
 const DESCUENTO_CORRALON = 10;   // % de descuento en corralones adheridos
@@ -113,9 +108,6 @@ if (USA_FIREBASE) {
   const db = firebase.firestore();
   const tasksRef = db.collection("changuitas_tasks");
   const usersRef = db.collection("changuitas_usuarios");
-  const ratingsRef = db.collection("changuitas_calificaciones");
-  const Timestamp = firebase.firestore.Timestamp;
-  const aMs = v => (v && typeof v.toMillis === "function") ? v.toMillis() : (v ?? null);
   let nombrePendiente = null; // evita que al registrarse se muestre el correo en vez del nombre
 
   backend = {
@@ -141,31 +133,17 @@ if (USA_FIREBASE) {
     logout() { return auth.signOut(); },
     subscribeTasks(cb) {
       tasksRef.orderBy("createdAt", "desc").onSnapshot(
-        snap => cb(snap.docs.map(d => { const x = d.data(); return { id: d.id, ...x, completedAt: aMs(x.completedAt), expiraEn: aMs(x.expiraEn) }; })),
+        snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
         err => console.error("Error de Firebase:", err)
       );
     },
     addTask(t) { return tasksRef.add({ ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
     // arrayUnion no agrega dos veces el mismo postulante
     apply(id, applicant) { return tasksRef.doc(id).update({ applicants: firebase.firestore.FieldValue.arrayUnion(applicant) }); },
-    updateTask(id, patch) { return tasksRef.doc(id).update(patch); },
-    // Al completarse se guarda cuándo se debe eliminar (expiraEn)
-    completeTask(id) {
-      const ahora = Date.now();
-      return tasksRef.doc(id).update({
-        status: "completada",
-        completedAt: Timestamp.fromMillis(ahora),
-        expiraEn: Timestamp.fromMillis(ahora + HORAS_HASTA_ELIMINAR * 3600000)
-      });
-    },
-    deleteTask(id) { return tasksRef.doc(id).delete(); },
-    // Una calificación por persona y por tarea (el id del documento lo garantiza)
-    rate(r) { return ratingsRef.doc(r.taskId + "_" + r.fromId).set({ ...r, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
-    async ratingsOf(uid) { const s = await ratingsRef.where("toId", "==", uid).get(); return s.docs.map(d => d.data()); },
-    async ratingsOfTask(taskId) { const s = await ratingsRef.where("taskId", "==", taskId).get(); return s.docs.map(d => d.data()); }
+    updateTask(id, patch) { return tasksRef.doc(id).update(patch); }
   };
 } else {
-  const K_USERS = "changuitas_usuarios", K_SESION = "changuitas_sesion", K_TAREAS = "changuitas_tareas", K_CALIF = "changuitas_calificaciones";
+  const K_USERS = "changuitas_usuarios", K_SESION = "changuitas_sesion", K_TAREAS = "changuitas_tareas";
   const leer = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? def : v; } catch (e) { return def; } };
   const guardar = (k, v) => localStorage.setItem(k, JSON.stringify(v));
   const hash = async txt => {
@@ -174,30 +152,19 @@ if (USA_FIREBASE) {
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
   };
   let cbAuth = () => {}, cbTareas = null;
-  // Al leer las tareas se descartan las completadas cuyo plazo ya venció
-  const leerTareas = () => {
-    const todas = leer(K_TAREAS, []);
-    const vigentes = todas.filter(t => !(t.status === "completada" && t.expiraEn && t.expiraEn <= Date.now()));
-    if (vigentes.length !== todas.length) guardar(K_TAREAS, vigentes);
-    return vigentes;
-  };
-  const emitir = () => { if (cbTareas) cbTareas(leerTareas()); };
+  const emitir = () => { if (cbTareas) cbTareas(leer(K_TAREAS, [])); };
   const modificar = (id, fn) => {
-    const ts = leerTareas();
+    const ts = leer(K_TAREAS, []);
     const t = ts.find(x => x.id === id);
     if (t) { fn(t); guardar(K_TAREAS, ts); emitir(); }
   };
   window.addEventListener("storage", e => { if (e.key === K_TAREAS) emitir(); });
 
   const TAREAS_EJEMPLO = [
-    { id: "ej1", title: "Armar mueble de IKEA", desc: "Necesito armar un ropero de 2 puertas hoy en la tarde. Tengo las herramientas básicas.", zona: "Caballito, CABA", reward: 15000, status: "abierta", postedBy: "Fernanda R.", postedById: "ej-fernanda", applicants: [{ uid: "ej-carlos", name: "Carlos M.", msg: "Tengo experiencia armando muebles, puedo ir hoy 18hs." }], assignedTo: null, assignedToId: null },
-    { id: "ej2", title: "Repartir volantes", desc: "Repartir 200 volantes en el centro de la ciudad, aprox 2 horas.", zona: "Balvanera, CABA", reward: 8000, status: "abierta", postedBy: "Juan P.", postedById: "ej-juan", applicants: [], assignedTo: null, assignedToId: null },
-    { id: "ej3", title: "Limpieza de patio", desc: "Cortar pasto y sacar hojas de un patio mediano.", zona: "Villa Crespo, CABA", reward: 20000, status: "asignada", postedBy: "Lucía G.", postedById: "ej-lucia", applicants: [{ uid: "ej-diego", name: "Diego S.", msg: "Trabajo de jardinería, disponible el sábado." }], assignedTo: "Diego S.", assignedToId: "ej-diego" }
+    { id: "ej1", title: "Armar mueble de IKEA", desc: "Necesito armar un ropero de 2 puertas hoy en la tarde. Tengo las herramientas básicas.", reward: 15000, status: "abierta", postedBy: "Fernanda R.", postedById: "ej-fernanda", applicants: [{ uid: "ej-carlos", name: "Carlos M.", msg: "Tengo experiencia armando muebles, puedo ir hoy 18hs." }], assignedTo: null, assignedToId: null },
+    { id: "ej2", title: "Repartir volantes", desc: "Repartir 200 volantes en el centro de la ciudad, aprox 2 horas.", reward: 8000, status: "abierta", postedBy: "Juan P.", postedById: "ej-juan", applicants: [], assignedTo: null, assignedToId: null },
+    { id: "ej3", title: "Limpieza de patio", desc: "Cortar pasto y sacar hojas de un patio mediano.", reward: 20000, status: "asignada", postedBy: "Lucía G.", postedById: "ej-lucia", applicants: [{ uid: "ej-diego", name: "Diego S.", msg: "Trabajo de jardinería, disponible el sábado." }], assignedTo: "Diego S.", assignedToId: "ej-diego" }
   ];
-  // Calificaciones de ejemplo para que se vean estrellas en la demostración
-  const CALIF_EJEMPLO = [
-    ["ej-fernanda", [5, 5, 4, 5]], ["ej-carlos", [5, 4]], ["ej-juan", [4, 5, 4]], ["ej-lucia", [5, 5, 5]], ["ej-diego", [4, 5, 5, 5]]
-  ].flatMap(([toId, lista]) => lista.map((stars, i) => ({ id: "ej-hist" + i + "_" + toId, taskId: "ej-hist" + i, taskTitle: "Changa anterior", fromId: "ej-otro", fromName: "Usuario", toId, toName: "", stars, comment: "", createdAt: 0 })));
 
   backend = {
     modo: "local",
@@ -228,30 +195,11 @@ if (USA_FIREBASE) {
     subscribeTasks(cb) {
       cbTareas = cb;
       if (localStorage.getItem(K_TAREAS) === null) guardar(K_TAREAS, TAREAS_EJEMPLO);
-      if (localStorage.getItem(K_CALIF) === null) guardar(K_CALIF, CALIF_EJEMPLO);
       emitir();
     },
-    async addTask(t) { const ts = leerTareas(); ts.unshift({ ...t, id: "t" + Date.now() }); guardar(K_TAREAS, ts); emitir(); },
+    async addTask(t) { const ts = leer(K_TAREAS, []); ts.unshift({ ...t, id: "t" + Date.now() }); guardar(K_TAREAS, ts); emitir(); },
     async apply(id, applicant) { modificar(id, t => { if (!t.applicants.some(a => a.uid === applicant.uid)) t.applicants.push(applicant); }); },
-    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); },
-    async completeTask(id) {
-      const ahora = Date.now();
-      modificar(id, t => Object.assign(t, { status: "completada", completedAt: ahora, expiraEn: ahora + HORAS_HASTA_ELIMINAR * 3600000 }));
-    },
-    async deleteTask(id) { guardar(K_TAREAS, leer(K_TAREAS, []).filter(t => t.id !== id)); emitir(); },
-    async rate(r) {
-      const id = r.taskId + "_" + r.fromId;
-      const t = leerTareas().find(x => x.id === r.taskId);
-      const participa = t && ((t.postedById === r.fromId && t.assignedToId === r.toId) || (t.assignedToId === r.fromId && t.postedById === r.toId));
-      if (!t || t.status !== "completada" || !participa) throw { code: "calif/no-permitida" };
-      if (!(r.stars >= 1 && r.stars <= 5)) throw { code: "calif/estrellas" };
-      const cs = leer(K_CALIF, []);
-      if (cs.some(c => c.id === id)) throw { code: "calif/ya-existe" };
-      cs.push({ ...r, id, createdAt: Date.now() });
-      guardar(K_CALIF, cs);
-    },
-    async ratingsOf(uid) { return leer(K_CALIF, []).filter(c => c.toId === uid); },
-    async ratingsOfTask(taskId) { return leer(K_CALIF, []).filter(c => c.taskId === taskId); }
+    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); }
   };
 }
 
@@ -261,44 +209,17 @@ if (USA_FIREBASE) {
 const $ = id => document.getElementById(id);
 const fmt = n => "$" + Number(n).toLocaleString("es-AR");
 const statusLabel = s => ({ abierta: "Abierta", asignada: "Asignada", completada: "Completada" }[s]);
-const estrellas = n => "★".repeat(n) + "☆".repeat(5 - n);
-const mapsUrl = z => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(z);
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
-function tiempoRestante(ms) {
-  const h = Math.ceil(ms / 3600000);
-  if (h >= 48) return Math.ceil(h / 24) + " días";
-  if (h > 1) return h + " horas";
-  return "menos de 1 hora";
-}
-
-const PIN = '<svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
 
 let yo = null;               // usuario con la sesión iniciada: { uid, name, email }
-let tareasCrudas = [];       // tal como llegan de la base de datos
-let tasks = [];              // las vigentes (sin las completadas vencidas)
+let tasks = [];
 let currentTaskId = null;
 let currentScreen = "feed";
 let pila = ["feed"];
 let busqueda = "";
 let authMode = "login";
-let misTab = "publicadas";
-const eliminando = new Set();
-
-// Calificaciones: promedio por usuario (se guarda unos segundos para no pedirlo a cada rato) y las de la tarea abierta
-const repCache = {};                 // uid -> { count, avg, at }
-const repCargando = new Set();
-const REP_VIGENCIA_MS = 30000;
-let ratingsTarea = [], ratingsTareaId = null, ratingsTareaListo = false;
-let borrador = { taskId: null, stars: 0, comment: "" };
-
-// Dibuja de nuevo la pantalla actual (sin pisar lo que se está escribiendo)
-function refrescar() {
-  if (!yo || currentScreen === "post") return;
-  if (currentScreen === "feed") drawFeedList();
-  else render[currentScreen]();
-}
 
 // =========================================================================
 // LOGIN / REGISTRO
@@ -361,91 +282,6 @@ function traducirError(code) {
 );
 
 // =========================================================================
-// TAREAS COMPLETADAS: se eliminan solas cuando vence su plazo
-// =========================================================================
-const esVencida = t => t.status === "completada" && t.expiraEn && t.expiraEn <= Date.now();
-
-function procesarTareas() {
-  tasks = tareasCrudas.filter(t => !esVencida(t));   // dejan de verse apenas vencen
-  if (!yo) return;
-  tareasCrudas.filter(esVencida).forEach(t => {        // y se borran de la base de datos
-    if (!eliminando.has(t.id)) { eliminando.add(t.id); backend.deleteTask(t.id).catch(() => {}); }
-  });
-}
-
-// =========================================================================
-// CALIFICACIONES
-// =========================================================================
-// Pide el promedio de estrellas de cada usuario (y lo actualiza si ya pasaron unos segundos)
-async function cargarRep(uids) {
-  const ahora = Date.now();
-  const faltan = [...new Set(uids)].filter(u => u && !repCargando.has(u) && (!repCache[u] || ahora - repCache[u].at > REP_VIGENCIA_MS));
-  if (!faltan.length) return;
-  faltan.forEach(u => repCargando.add(u));
-  let cambio = false;
-  await Promise.all(faltan.map(async u => {
-    try {
-      const rs = await backend.ratingsOf(u);
-      const nuevo = { count: rs.length, avg: rs.length ? rs.reduce((s, r) => s + r.stars, 0) / rs.length : 0, at: Date.now() };
-      const viejo = repCache[u];
-      if (!viejo || viejo.count !== nuevo.count || viejo.avg !== nuevo.avg) cambio = true;
-      repCache[u] = nuevo;
-    } catch (e) {
-    } finally { repCargando.delete(u); }
-  }));
-  if (cambio) refrescar();
-}
-
-function repTxt(uid) {
-  const r = repCache[uid];
-  if (!r) return "";
-  if (!r.count) return `<span class="rep sin">Sin calificaciones</span>`;
-  return `<span class="rep">★ ${r.avg.toFixed(1).replace(".", ",")} (${r.count})</span>`;
-}
-
-function cargarCalifTarea(id, forzar = false) {
-  if (ratingsTareaId === id && !forzar) return;
-  if (ratingsTareaId !== id) { ratingsTareaId = id; ratingsTareaListo = false; ratingsTarea = []; }
-  backend.ratingsOfTask(id)
-    .then(rs => {
-      if (ratingsTareaId !== id) return;
-      const cambio = !ratingsTareaListo || rs.length !== ratingsTarea.length;
-      ratingsTarea = rs; ratingsTareaListo = true;
-      if (cambio) refrescar();
-    })
-    .catch(() => { if (ratingsTareaId === id && !ratingsTareaListo) { ratingsTareaListo = true; refrescar(); } });
-}
-
-function elegirEstrella(n) {
-  borrador.stars = n;
-  for (let i = 1; i <= 5; i++) $("star" + i).classList.toggle("on", i <= n);
-  $("califBtn").disabled = false;
-}
-
-async function enviarCalificacion() {
-  const t = tasks.find(x => x.id === currentTaskId);
-  if (!t || t.status !== "completada") return;
-  const esMia = t.postedById === yo.uid, fuiElegido = t.assignedToId === yo.uid;
-  if (!esMia && !fuiElegido) return;                              // solo participan los dos involucrados
-  if (!(borrador.stars >= 1 && borrador.stars <= 5)) return;
-  if (ratingsTarea.some(r => r.fromId === yo.uid)) return;        // una sola calificación por tarea
-  const aQuien = esMia ? { id: t.assignedToId, name: t.assignedTo } : { id: t.postedById, name: t.postedBy };
-  $("califBtn").disabled = true;
-  try {
-    await backend.rate({
-      taskId: t.id, taskTitle: t.title, fromId: yo.uid, fromName: yo.name,
-      toId: aQuien.id, toName: aQuien.name, stars: borrador.stars,
-      comment: (borrador.comment || "").trim().slice(0, 300)
-    });
-    delete repCache[aQuien.id];
-    ratingsTarea = await backend.ratingsOfTask(t.id);
-    borrador = { taskId: null, stars: 0, comment: "" };
-    cargarRep([aQuien.id]);
-    refrescar();
-  } catch (e) { avisarError(e); }
-}
-
-// =========================================================================
 // NAVEGACIÓN
 // =========================================================================
 const NAV = { feed: "navHome", materials: "navMaterials", myTasks: "navTasks", profile: "navProfile" };
@@ -453,8 +289,6 @@ const TITULOS = { feed: "Changuitas", materials: "Materiales", post: "Publicar t
 
 function showScreen(screen, push = true) {
   currentScreen = screen;
-  if (screen === "detail") ratingsTareaId = null;   // al entrar se vuelven a pedir las calificaciones de la tarea
-  if (screen === "detail" || screen === "profile") Object.values(repCache).forEach(r => { if (r) r.at = 0; });   // y los promedios
   if (push) pila.push(screen);
   $("backBtn").classList.toggle("hidden", screen === "feed");
   $("fab").classList.toggle("hidden", screen !== "feed");
@@ -471,16 +305,12 @@ function goBack() {
 }
 
 function openDetail(id) { currentTaskId = id; showScreen("detail"); }
-function setMisTab(t) { misTab = t; renderMyTasks(); }
 
 // =========================================================================
 // PANTALLAS
 // =========================================================================
 function tarjeta(t, conDescripcion) {
   const n = (t.applicants || []).length;
-  const extra = t.status === "completada" && t.expiraEn
-    ? "Se elimina en " + tiempoRestante(t.expiraEn - Date.now())
-    : n + " postulante" + (n !== 1 ? "s" : "");
   return `
     <div class="card" onclick="openDetail('${t.id}')">
       <div class="card-top">
@@ -489,22 +319,15 @@ function tarjeta(t, conDescripcion) {
       </div>
       ${conDescripcion ? `<p class="card-desc">${escapeHtml(t.desc)}</p>` : ""}
       <div class="card-meta">
-        <span class="loc">${t.zona ? PIN + escapeHtml(t.zona) : ""}</span>
-        <span class="status status-${t.status}">${t.status === "completada" ? "✓ " : ""}${statusLabel(t.status)}</span>
+        <span class="status status-${t.status}">${statusLabel(t.status)}</span>
+        <span>${n} postulante${n !== 1 ? "s" : ""}</span>
       </div>
-      <div class="card-meta" style="margin-top:4px"><span>${extra}</span></div>
     </div>`;
 }
 
-// --- Inicio: banner con la frase + tareas abiertas ---
+// --- Inicio: todas las tareas ---
 function renderFeed() {
   $("main").innerHTML = `
-    <div class="hero">
-      <img class="wm" src="logo-icon.png" alt="">
-      <h2>${escapeHtml(FRASE)} <span>${escapeHtml(FRASE_DESTACADA)}</span></h2>
-      <p>Publicá lo que necesitás o postulate a lo que otros ofrecen.</p>
-      <button class="cta" onclick="showScreen('post')">+ Publicar tarea</button>
-    </div>
     <input class="search" placeholder="Buscar tareas" value="${escapeHtml(busqueda)}" oninput="filterFeed(this.value)">
     <div id="feedList" class="grid"></div>`;
   drawFeedList();
@@ -512,14 +335,10 @@ function renderFeed() {
 function filterFeed(q) { busqueda = q; drawFeedList(); }
 function drawFeedList() {
   const q = busqueda.toLowerCase();
-  // Las completadas no se ven en Inicio: quedan en "Mis tareas" hasta que se eliminan
-  const list = tasks.filter(t => t.status !== "completada" &&
-    (t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q) || (t.zona || "").toLowerCase().includes(q)));
+  const list = tasks.filter(t => t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
   $("feedList").innerHTML = list.length
     ? list.map(t => tarjeta(t, true)).join("")
-    : (q
-      ? `<p class="empty">No hay tareas que coincidan con tu búsqueda.</p>`
-      : `<div class="empty-box"><img src="logo-icon.png" alt=""><h3>Todavía no hay tareas</h3><p>Sé la primera persona en publicar una changa en tu zona.</p><button class="btn btn-primary" onclick="showScreen('post')">+ Publicar tarea</button></div>`);
+    : `<p class="empty">No hay tareas disponibles todavía.</p>`;
 }
 
 // --- Materiales: 3 apartados ---
@@ -554,16 +373,13 @@ function renderMaterials() {
     </section>`;
 }
 
-// --- Publicar tarea (ahora con la zona) ---
+// --- Publicar tarea ---
 function renderPost() {
   $("main").innerHTML = `
     <label for="postTitle">Título de la tarea</label>
     <input type="text" id="postTitle" placeholder="Ej: Armar mueble de IKEA">
     <label for="postDesc">Descripción</label>
     <textarea id="postDesc" placeholder="Describí qué necesitás que se haga"></textarea>
-    <label for="postZona">¿Dónde es la tarea?</label>
-    <input type="text" id="postZona" placeholder="Barrio y ciudad. Ej: Caballito, CABA" autocomplete="off">
-    <p class="hint">🔒 Poné solo el barrio o la zona. La dirección exacta la acordás con la persona que elijas.</p>
     <label for="postReward">Recompensa ofrecida (ARS)</label>
     <input type="number" id="postReward" placeholder="Ej: 15000" min="0">
     <div id="postError" class="error"></div>
@@ -573,21 +389,16 @@ function renderPost() {
 async function submitTask() {
   const title = $("postTitle").value.trim();
   const desc = $("postDesc").value.trim();
-  const zona = $("postZona").value.trim();
   const reward = $("postReward").value;
   if (!title || !desc || !reward || Number(reward) <= 0) {
-    $("postError").textContent = "Completá el título, la descripción y la recompensa.";
-    return;
-  }
-  if (zona.length < 3) {
-    $("postError").textContent = "Indicá en qué barrio o zona es la tarea.";
+    $("postError").textContent = "Completá todos los campos con datos válidos.";
     return;
   }
   const btn = $("postBtn");
   btn.disabled = true; btn.textContent = "Publicando...";
   try {
     await backend.addTask({
-      title, desc, zona, reward: Number(reward), status: "abierta",
+      title, desc, reward: Number(reward), status: "abierta",
       applicants: [], assignedTo: null, assignedToId: null,
       postedBy: yo.name, postedById: yo.uid
     });
@@ -601,15 +412,12 @@ async function submitTask() {
 // --- Detalle de tarea ---
 function renderDetail() {
   const t = tasks.find(x => x.id === currentTaskId);
-  if (!t) { $("main").innerHTML = `<p class="empty">Esa tarea ya no está disponible.</p>`; return; }
+  if (!t) { $("main").innerHTML = `<p class="empty">Tarea no encontrada.</p>`; return; }
 
   const postulantes = t.applicants || [];
   const esMia = t.postedById === yo.uid;                        // la publiqué yo
   const yaMePostule = postulantes.some(a => a.uid === yo.uid);  // ya estoy en la lista
   const fuiElegido = t.assignedToId === yo.uid;
-
-  cargarRep([t.postedById, t.assignedToId, ...postulantes.map(a => a.uid)]);
-  if (t.status === "completada") cargarCalifTarea(t.id);
 
   let acciones = "";
   if (t.status === "abierta") {
@@ -618,71 +426,38 @@ function renderDetail() {
       ${postulantes.length === 0 ? `<p class="empty-inline">Aún nadie se postuló.</p>` : postulantes.map((a, i) => `
         <div class="applicant">
           <div>
-            <div class="applicant-name">${escapeHtml(a.name)}${a.uid === yo.uid ? " (vos)" : ""} ${repTxt(a.uid)}</div>
+            <div class="applicant-name">${escapeHtml(a.name)}${a.uid === yo.uid ? " (vos)" : ""}</div>
             <div class="applicant-msg">${escapeHtml(a.msg)}</div>
           </div>
           ${esMia ? `<button class="btn btn-secondary btn-small" onclick="selectCandidate(${i})">Elegir</button>` : ""}
         </div>`).join("")}
       ${esMia
-        ? `<p class="empty-inline">Es tu tarea: elegí a un postulante de la lista.</p>
-           <button class="btn btn-danger" onclick="eliminarTarea()">Eliminar tarea</button>
-           <p class="hint" style="text-align:center">¿La publicaste mal? Podés eliminarla mientras no hayas elegido a nadie.</p>`
+        ? `<p class="empty-inline">Es tu tarea: elegí a un postulante de la lista.</p>`
         : yaMePostule
           ? `<button class="btn btn-primary" disabled>Ya te postulaste</button>`
           : `<button class="btn btn-primary" onclick="this.disabled = true; applyToTask()">Postularme a esta tarea</button>`}`;
   } else if (t.status === "asignada") {
     acciones = `
       <div class="section-label">Asignada a</div>
-      <p style="font-weight:600;">${escapeHtml(t.assignedTo)} ${repTxt(t.assignedToId)}</p>
+      <p style="font-weight:600;">${escapeHtml(t.assignedTo)}</p>
       ${esMia
         ? `<button class="btn btn-primary" onclick="confirmAndPay()">Confirmar cumplimiento y pagar</button>`
         : `<p class="empty-inline">${fuiElegido ? "¡Te eligieron para esta tarea! Esperando que quien la publicó confirme el cumplimiento." : "Esta tarea ya fue asignada."}</p>`}`;
   } else {
-    acciones = bloqueCompletada(t, esMia, fuiElegido);
+    acciones = `
+      <div class="section-label">Estado</div>
+      <p style="font-weight:600; color:#3b6d11;">✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo)}.</p>`;
   }
 
   $("main").innerHTML = `
     <div class="detail-wrap">
-      <span class="status status-${t.status}">${t.status === "completada" ? "✓ " : ""}${statusLabel(t.status)}</span>
+      <span class="status status-${t.status}">${statusLabel(t.status)}</span>
       <div class="detail-title" style="margin-top:10px;">${escapeHtml(t.title)}</div>
-      <p class="applicant-msg" style="margin-bottom:6px;">Publicada por ${escapeHtml(t.postedBy || "—")}${repTxt(t.postedById) ? " · " + repTxt(t.postedById) : ""}</p>
+      <p class="applicant-msg" style="margin-bottom:6px;">Publicada por ${escapeHtml(t.postedBy || "—")}</p>
       <div class="detail-reward">${fmt(t.reward)}</div>
-      ${t.zona ? `<div class="zona">${PIN}<span>${escapeHtml(t.zona)}</span><a class="link" href="${mapsUrl(t.zona)}" target="_blank" rel="noopener">Ver en Google Maps</a></div>` : ""}
       <div class="detail-desc">${escapeHtml(t.desc)}</div>
       ${acciones}
     </div>`;
-}
-
-// Tarea completada: aviso con el tiempo que le queda + calificación entre los dos involucrados
-function bloqueCompletada(t, esMia, fuiElegido) {
-  const resta = t.expiraEn ? t.expiraEn - Date.now() : null;
-  let html = `
-    <div class="done-banner"><span class="done-ic">✅</span><div><b>Tarea completada y pagada a ${escapeHtml(t.assignedTo)}</b>
-    ${resta !== null ? `<br>Se eliminará automáticamente en ${tiempoRestante(resta)}. Las calificaciones se conservan.` : ""}</div></div>`;
-  if (!esMia && !fuiElegido) return html;
-
-  const aQuien = esMia ? { id: t.assignedToId, name: t.assignedTo } : { id: t.postedById, name: t.postedBy };
-  html += `<div class="section-label">Calificación</div>`;
-  if (!ratingsTareaListo) return html + `<p class="empty-inline">Cargando calificaciones…</p>`;
-
-  const mia = ratingsTarea.find(r => r.fromId === yo.uid);
-  const recibida = ratingsTarea.find(r => r.toId === yo.uid);
-
-  if (mia) {
-    html += `<div class="rating-box"><div class="small">Tu calificación para ${escapeHtml(aQuien.name)}</div>
-      <div class="stars-show">${estrellas(mia.stars)}</div>${mia.comment ? `<p class="comment">“${escapeHtml(mia.comment)}”</p>` : ""}</div>`;
-  } else {
-    if (borrador.taskId !== t.id) borrador = { taskId: t.id, stars: 0, comment: "" };
-    html += `<div class="rating-box"><div class="small"><b>Calificá a ${escapeHtml(aQuien.name)}</b>: así ayudás a otros usuarios a elegir.</div>
-      <div class="stars-pick">${[1, 2, 3, 4, 5].map(n => `<button class="star ${n <= borrador.stars ? "on" : ""}" id="star${n}" onclick="elegirEstrella(${n})" aria-label="${n} estrellas">★</button>`).join("")}</div>
-      <textarea id="califComment" maxlength="300" placeholder="Contá cómo fue (opcional)" oninput="borrador.comment = this.value">${escapeHtml(borrador.comment)}</textarea>
-      <button class="btn btn-primary" id="califBtn" onclick="enviarCalificacion()" ${borrador.stars ? "" : "disabled"}>Enviar calificación</button></div>`;
-  }
-  if (recibida) {
-    html += `<div class="rating-box"><div class="small">${escapeHtml(recibida.fromName)} te calificó</div>
-      <div class="stars-show">${estrellas(recibida.stars)}</div>${recibida.comment ? `<p class="comment">“${escapeHtml(recibida.comment)}”</p>` : ""}</div>`;
-  }
-  return html;
 }
 
 // Además de ocultar los botones, cada acción vuelve a validar: aunque alguien
@@ -710,18 +485,7 @@ async function confirmAndPay() {
   const t = tasks.find(x => x.id === currentTaskId);
   if (!t || t.status !== "asignada" || t.postedById !== yo.uid) return;
   try {
-    await backend.completeTask(t.id);
-  } catch (e) { avisarError(e); }
-}
-
-// Quien publicó una tarea puede eliminarla mientras siga abierta (por ejemplo, si la publicó mal)
-async function eliminarTarea() {
-  const t = tasks.find(x => x.id === currentTaskId);
-  if (!t || t.postedById !== yo.uid || t.status !== "abierta") return;
-  if (!confirm("¿Eliminar esta tarea? Se borra para todos y no se puede deshacer.")) return;
-  try {
-    await backend.deleteTask(t.id);
-    goBack();
+    await backend.updateTask(t.id, { status: "completada" });
   } catch (e) { avisarError(e); }
 }
 
@@ -733,34 +497,23 @@ function avisarError(e) {
   if (currentScreen === "detail") renderDetail();
 }
 
-// --- Mis tareas: publicadas / postuladas ---
+// --- Mis tareas ---
 function renderMyTasks() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
-  const postuladas = tasks.filter(t => t.postedById !== yo.uid && ((t.applicants || []).some(a => a.uid === yo.uid) || t.assignedToId === yo.uid));
-  const lista = misTab === "publicadas" ? mias : postuladas;
-  $("main").innerHTML = `
-    <div class="auth-tabs">
-      <div class="auth-tab ${misTab === "publicadas" ? "active" : ""}" onclick="setMisTab('publicadas')">Publicadas (${mias.length})</div>
-      <div class="auth-tab ${misTab === "postuladas" ? "active" : ""}" onclick="setMisTab('postuladas')">Postuladas (${postuladas.length})</div>
-    </div>
-    ${lista.length
-      ? `<div class="grid">${lista.map(t => tarjeta(t, false)).join("")}</div>`
-      : (misTab === "publicadas"
-        ? `<div class="empty-box"><img src="logo-icon.png" alt=""><h3>Todavía no publicaste nada</h3><p>Contá qué necesitás y recibí postulantes de tu zona.</p><button class="btn btn-primary" onclick="showScreen('post')">+ Publicá tu primera changa</button></div>`
-        : `<div class="empty-box"><img src="logo-icon.png" alt=""><h3>Todavía no te postulaste</h3><p>Mirá las tareas disponibles y postulate a la que te interese.</p><button class="btn btn-primary" onclick="showScreen('feed')">Ver tareas</button></div>`)}`;
+  $("main").innerHTML = mias.length
+    ? `<div class="section-label" style="margin-top:0">Tareas que publicaste</div><div class="grid">${mias.map(t => tarjeta(t, false)).join("")}</div>`
+    : `<p class="empty">No publicaste tareas todavía.</p>`;
 }
 
-// --- Perfil: mi calificación y resumen ---
+// --- Perfil ---
 function renderProfile() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
   const postulaciones = tasks.filter(t => (t.applicants || []).some(a => a.uid === yo.uid)).length;
-  cargarRep([yo.uid]);
   $("main").innerHTML = `
     <div class="profile-head">
       <div class="avatar">${escapeHtml(yo.name.slice(0, 2).toUpperCase())}</div>
       <p class="profile-name">${escapeHtml(yo.name)}</p>
       <p class="profile-mail">${escapeHtml(yo.email || "")}</p>
-      <p class="profile-rep">${repTxt(yo.uid) || ""}</p>
     </div>
     <div class="section-label">Resumen</div>
     <div class="card resumen">
@@ -779,8 +532,6 @@ const render = { feed: renderFeed, materials: renderMaterials, post: renderPost,
 // =========================================================================
 // ARRANQUE: si no hay sesión se muestra el login; si la hay, entra a la app
 // =========================================================================
-$("authSlogan").innerHTML = `${escapeHtml(FRASE)} <b>${escapeHtml(FRASE_DESTACADA)}</b>`;
-
 if (backend.modo === "local") {
   $("authNote").textContent = "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
   $("authNote").classList.remove("hidden");
@@ -792,9 +543,10 @@ if (backend.modo === "firebase" && location.protocol === "file:") {
 }
 
 backend.subscribeTasks(list => {
-  tareasCrudas = list;
-  procesarTareas();
-  refrescar();
+  tasks = list;
+  if (!yo || currentScreen === "post") return;   // no borrar lo que se está escribiendo
+  if (currentScreen === "feed") drawFeedList();   // no perder el foco del buscador
+  else render[currentScreen]();
 });
 
 backend.onAuth(user => {
@@ -803,7 +555,6 @@ backend.onAuth(user => {
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
     pila = ["feed"];
-    procesarTareas();
     showScreen("feed", false);
   } else {
     $("app").classList.add("hidden");
@@ -811,17 +562,6 @@ backend.onAuth(user => {
     $("authPassword").value = "";
   }
 });
-
-// Si la app queda abierta, cada minuto se revisa si alguna tarea completada ya venció
-setInterval(() => {
-  const antes = tasks.length;
-  procesarTareas();
-  if (tasks.length !== antes) refrescar();
-  if (yo && currentScreen === "detail") {
-    const t = tasks.find(x => x.id === currentTaskId);
-    if (t && t.status === "completada") cargarCalifTarea(t.id, true);
-  }
-}, 60000);
 </script>
 
 </body>
