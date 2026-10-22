@@ -219,4 +219,18 @@ nav .icon { font-size: 19px; display: block; margin-bottom: 2px; }
   .nav-logo { display: block; width: 150px; margin: 0 auto 24px; }
   nav div { display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 12px 28px; font-size: 14px; text-align: left; }
   nav .icon { font-size: 18px; margin-bottom: 0; }
-  nav div.active { background: var(--azul-suave);
+  nav div.active { background: var(--azul-suave); border-right: 3px solid var(--azul); }
+  .btn { max-width: 320px; }
+  .error { max-width: 320px; }
+  input[type=text], input[type=number], textarea { max-width: 480px; }
+  .auth-tabs { max-width: 360px; }
+  .rating-box textarea { max-width: 100%; }
+  .rating-box { max-width: 480px; }
+}
+
+/* ===== CELULAR REAL (480px o menos): ocupa toda la pantalla ===== */
+@media (max-width: 480px) {
+  body { padding: 0; background: var(--bg); }
+  #authScreen { width: 100%; border-radius: 0; box-shadow: none; min-height: 100vh; min-height: 100dvh; padding: 28px 22px; }
+  #app { width: 100%; border-radius: 0; box-shadow: none; height: 100vh; height: 100dvh; }
+}
