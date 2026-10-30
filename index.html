@@ -9,8 +9,6 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<!-- ===== 1) INICIO DE SESIÓN / REGISTRO (es lo primero que se ve al abrir el enlace) ===== -->
 <div id="authScreen">
   <img class="auth-logo" src="logo.png" alt="Changuita - Trabajo rápido y cerca">
 
@@ -34,8 +32,6 @@
   <button class="btn btn-primary" id="authBtn" onclick="submitAuth()">Iniciar sesión</button>
   <p id="authNote" class="auth-note hidden"></p>
 </div>
-
-<!-- ===== 2) APP (solo se muestra con la sesión iniciada) ===== -->
 <div id="app" class="hidden">
   <header>
     <button class="back hidden" id="backBtn" onclick="goBack()">←</button>
@@ -58,17 +54,11 @@
     <div id="navProfile" onclick="showScreen('profile')"><span class="icon">☺</span>Perfil</div>
   </nav>
 </div>
-<!-- Pie de página con la dirección (visible debajo de la app) -->
+
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
-// =========================================================================
-// CONFIGURACIÓN
-// Mientras tenga los valores "TU_...", la app funciona en MODO DEMOSTRACIÓN
-// (cuentas y tareas guardadas solo en este navegador). Cuando pegues tus datos
-// reales de Firebase pasa sola a login real y tareas compartidas entre usuarios.
-// =========================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBMSz--Ajb8FDFs6DSWfXmUBmFC76nK9cY",
   authDomain: "changuita-d8c62.firebaseapp.com",
@@ -79,9 +69,9 @@ const firebaseConfig = {
 };
 const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
 
-// Datos de la sección Materiales: son de EJEMPLO, cambialos por los reales
-const DESCUENTO_CORRALON = 10;   // % de descuento en corralones adheridos
-const DESCUENTO_EMPRESA = 15;    // % de descuento en productos de la empresa
+
+const DESCUENTO_CORRALON = 10;   
+const DESCUENTO_EMPRESA = 15;   
 const LUGARES = ["Corralones", "Ferreterías", "Pinturerías", "Casas de electricidad", "Sanitarios y plomería", "Maderas y aberturas"];
 const CORRALONES = [
   { nombre: "Corralón Ejemplo 1", detalle: "Cemento, cal, arena, ladrillos y hierros" },
@@ -93,9 +83,7 @@ const PRODUCTOS_EMPRESA = [
   { nombre: "Producto de la empresa 2", detalle: "Descripción del producto" }
 ];
 
-// =========================================================================
-// CAPA DE DATOS: dos versiones con la misma interfaz (Firebase o demostración)
-// =========================================================================
+
 let backend;
 
 if (USA_FIREBASE) {
@@ -104,7 +92,7 @@ if (USA_FIREBASE) {
   const db = firebase.firestore();
   const tasksRef = db.collection("changuitas_tasks");
   const usersRef = db.collection("changuitas_usuarios");
-  let nombrePendiente = null; // evita que al registrarse se muestre el correo en vez del nombre
+  let nombrePendiente = null; 
 
   backend = {
     modo: "firebase",
@@ -134,7 +122,7 @@ if (USA_FIREBASE) {
       );
     },
     addTask(t) { return tasksRef.add({ ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
-    // arrayUnion no agrega dos veces el mismo postulante
+
     apply(id, applicant) { return tasksRef.doc(id).update({ applicants: firebase.firestore.FieldValue.arrayUnion(applicant) }); },
     updateTask(id, patch) { return tasksRef.doc(id).update(patch); },
     deleteTask(id) { return tasksRef.doc(id).delete(); }
@@ -181,7 +169,7 @@ if (USA_FIREBASE) {
     async login(email, pass) {
       email = email.toLowerCase();
       const u = leer(K_USERS, []).find(x => x.email === email);
-      // En modo demostración las cuentas viven solo en el navegador donde se crearon
+     
       if (!u) throw { code: "local/sin-cuenta" };
       if (u.hash !== await hash(u.uid + pass)) throw { code: "auth/wrong-password" };
       const sesion = { uid: u.uid, name: u.name, email: u.email };
@@ -205,9 +193,6 @@ if (USA_FIREBASE) {
   };
 }
 
-// =========================================================================
-// ESTADO Y UTILIDADES
-// =========================================================================
 const $ = id => document.getElementById(id);
 const fmt = n => "$" + Number(n).toLocaleString("es-AR");
 const statusLabel = s => ({ abierta: "Abierta", asignada: "Asignada", completada: "Completada" }[s]);
@@ -215,7 +200,7 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-let yo = null;               // usuario con la sesión iniciada: { uid, name, email }
+let yo = null;              
 let tasks = [];
 let currentTaskId = null;
 let currentScreen = "feed";
@@ -223,9 +208,6 @@ let pila = ["feed"];
 let busqueda = "";
 let authMode = "login";
 
-// =========================================================================
-// LOGIN / REGISTRO
-// =========================================================================
 function setAuthMode(mode) {
   authMode = mode;
   const reg = mode === "register";
@@ -283,9 +265,7 @@ function traducirError(code) {
   $(id).addEventListener("keydown", e => { if (e.key === "Enter") submitAuth(); })
 );
 
-// =========================================================================
-// NAVEGACIÓN
-// =========================================================================
+
 const NAV = { feed: "navHome", materials: "navMaterials", myTasks: "navTasks", profile: "navProfile" };
 const TITULOS = { feed: "Changuitas", materials: "Materiales", post: "Publicar tarea", detail: "Detalle de tarea", myTasks: "Mis tareas", profile: "Perfil" };
 
@@ -308,9 +288,6 @@ function goBack() {
 
 function openDetail(id) { currentTaskId = id; showScreen("detail"); }
 
-// =========================================================================
-// PANTALLAS
-// =========================================================================
 function tarjeta(t, conDescripcion) {
   const n = (t.applicants || []).length;
   return `
@@ -328,7 +305,6 @@ function tarjeta(t, conDescripcion) {
     </div>`;
 }
 
-// --- Inicio: todas las tareas ---
 function renderFeed() {
   $("main").innerHTML = `
     <section class="hero">
@@ -349,7 +325,6 @@ function drawFeedList() {
     : `<p class="empty">No hay tareas disponibles todavía.</p>`;
 }
 
-// --- Materiales: 3 apartados ---
 function renderMaterials() {
   $("main").innerHTML = `
     <p class="mat-intro">Conseguí lo que necesitás para tu changa y ahorrá con nuestros descuentos.</p>
@@ -381,7 +356,7 @@ function renderMaterials() {
     </section>`;
 }
 
-// --- Publicar tarea ---
+
 function renderPost() {
   $("main").innerHTML = `
     <div class="post-intro">
@@ -426,7 +401,7 @@ async function submitTask() {
   }
 }
 
-// --- Detalle de tarea ---
+
 function renderDetail() {
   const t = tasks.find(x => x.id === currentTaskId);
   if (!t) { $("main").innerHTML = `<p class="empty">Tarea no encontrada.</p>`; return; }
@@ -479,8 +454,6 @@ function renderDetail() {
     </div>`;
 }
 
-// Además de ocultar los botones, cada acción vuelve a validar: aunque alguien
-// fuerce el botón desde la consola, no puede postularse a su tarea ni dos veces.
 async function applyToTask() {
   const t = tasks.find(x => x.id === currentTaskId);
   if (!t || t.status !== "abierta" || t.postedById === yo.uid) return;
@@ -510,7 +483,7 @@ async function confirmAndPay() {
 
 async function deleteTask(id) {
   const t = tasks.find(x => x.id === id);
-  // Solo quien publicó la tarea puede eliminarla.
+ 
   if (!t || !yo || t.postedById !== yo.uid) {
     alert("Solo podés eliminar las tareas que publicaste.");
     return;
@@ -528,8 +501,6 @@ async function deleteTask(id) {
   }
 }
 
-// Si Firebase rechaza la acción (sin internet o sin permiso), se avisa y se
-// vuelve a dibujar la pantalla para que los botones no queden bloqueados.
 function avisarError(e) {
   console.error("Error real de Firebase:", e);
   const code = e?.code || "sin código";
@@ -544,7 +515,6 @@ function avisarError(e) {
   if (currentScreen === "detail") renderDetail();
 }
 
-// --- Mis tareas ---
 function renderMyTasks() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
   $("main").innerHTML = mias.length
@@ -557,7 +527,7 @@ function renderMyTasks() {
     : `<p class="empty">No publicaste tareas todavía.</p>`;
 }
 
-// --- Perfil ---
+
 function renderProfile() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
   const postulaciones = tasks.filter(t => (t.applicants || []).some(a => a.uid === yo.uid)).length;
@@ -581,14 +551,10 @@ function renderProfile() {
 
 const render = { feed: renderFeed, materials: renderMaterials, post: renderPost, detail: renderDetail, myTasks: renderMyTasks, profile: renderProfile };
 
-// =========================================================================
-// ARRANQUE: si no hay sesión se muestra el login; si la hay, entra a la app
-// =========================================================================
 if (backend.modo === "local") {
   $("authNote").textContent = "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
   $("authNote").classList.remove("hidden");
 }
-// Firebase no permite iniciar sesión si la página se abre con doble clic (file://)
 if (backend.modo === "firebase" && location.protocol === "file:") {
   $("authNote").textContent = "Para usar la versión en línea abrí la página desde un enlace (https) o con Live Server. Con doble clic sobre el archivo, Firebase no deja iniciar sesión.";
   $("authNote").classList.remove("hidden");
@@ -596,8 +562,8 @@ if (backend.modo === "firebase" && location.protocol === "file:") {
 
 backend.subscribeTasks(list => {
   tasks = list;
-  if (!yo || currentScreen === "post") return;   // no borrar lo que se está escribiendo
-  if (currentScreen === "feed") drawFeedList();   // no perder el foco del buscador
+  if (!yo || currentScreen === "post") return;   
+  if (currentScreen === "feed") drawFeedList();   
   else render[currentScreen]();
 });
 
