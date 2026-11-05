@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0046b4">
-<title>Changuitas</title>
+<title>Changuita</title>
 <link rel="icon" href="logo-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -37,7 +37,7 @@
     <button class="back hidden" id="backBtn" onclick="goBack()">←</button>
     <div class="brand">
       <img class="brand-icon" src="logo-icon.png" alt="">
-      <h1 id="headerTitle">Changuitas</h1>
+      <h1 id="headerTitle">Changuita</h1>
     </div>
     <button class="btn-header" onclick="showScreen('post')">+ Publicar tarea</button>
   </header>
@@ -89,8 +89,8 @@ if (USA_FIREBASE) {
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
-  const tasksRef = db.collection("changuitas_tasks");
-  const usersRef = db.collection("changuitas_usuarios");
+  const tasksRef = db.collection("changuita_tasks");
+  const usersRef = db.collection("changuita_usuarios");
   let nombrePendiente = null;
 
   backend = {
@@ -148,9 +148,9 @@ if (USA_FIREBASE) {
     }
   };
 } else {
-  const K_USERS = "changuitas_usuarios";
-  const K_SESION = "changuitas_sesion";
-  const K_TAREAS = "changuitas_tareas";
+  const K_USERS = "changuita_usuario";
+  const K_SESION = "changuita_sesion";
+  const K_TAREAS = "changuita_tareas";
 
   const leer = (k, def) => {
     try {
@@ -448,7 +448,7 @@ const NAV = {
 };
 
 const TITULOS = {
-  feed: "Changuitas",
+  feed: "Changuita",
   materials: "Materiales",
   post: "Publicar tarea",
   detail: "Detalle de tarea",
@@ -466,7 +466,7 @@ function showScreen(screen, push = true) {
   Object.values(NAV).forEach(id => $(id).classList.remove("active"));
   if (NAV[screen]) $(NAV[screen]).classList.add("active");
 
-  $("headerTitle").textContent = TITULOS[screen] || "Changuitas";
+  $("headerTitle").textContent = TITULOS[screen] || "Changuita";
   render[screen]();
   $("main").scrollTop = 0;
 }
