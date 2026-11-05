@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -9,6 +10,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <div id="authScreen">
   <img class="auth-logo" src="logo.png" alt="Changuita - Trabajo rápido y cerca">
 
@@ -32,6 +34,7 @@
   <button class="btn btn-primary" id="authBtn" onclick="submitAuth()">Iniciar sesión</button>
   <p id="authNote" class="auth-note hidden"></p>
 </div>
+
 <div id="app" class="hidden">
   <header>
     <button class="back hidden" id="backBtn" onclick="goBack()">←</button>
@@ -58,28 +61,38 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
 <script>
 const firebaseConfig = {
-
   apiKey: "AIzaSyBMSz--Ajb8FDFs6DSWfXmUBmFC76nK9cY",
   authDomain: "changuita-d8c62.firebaseapp.com",
   projectId: "changuita-d8c62",
   storageBucket: "changuita-d8c62.firebasestorage.app",
   messagingSenderId: "861733747047",
   appId: "1:861733747047:web:cba5865598fc6855dd57c2"
-
 };
+
 const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
 
 const DESCUENTO_CORRALON = 10;
 const DESCUENTO_EMPRESA = 15;
-const LUGARES = ["Corralones", "Ferreterías", "Pinturerías", "Casas de electricidad", "Sanitarios y plomería", "Maderas y aberturas"];
+
+const LUGARES = [
+  "Corralones",
+  "Ferreterías",
+  "Pinturerías",
+  "Casas de electricidad",
+  "Sanitarios y plomería",
+  "Maderas y aberturas"
+];
+
 const CORRALONES = [
   { nombre: "Disensa", detalle: "Cemento, cal, arena, ladrillos, hierros, techos y pinturas " },
   { nombre: "Barugel Azulay", detalle: "Cerámicos, porcellanatos, griferías, sanitarios y bachas" },
   { nombre: "Materiales Echeverría", detalle: "Cemento, cal, arena, piedra partida, ladrillos, hierros y mallas" }
-
 ];
+
 const PRODUCTOS_EMPRESA = [
   { nombre: "Producto de la empresa 1", detalle: "Descripción del producto" },
   { nombre: "Producto de la empresa 2", detalle: "Descripción del producto" }
@@ -89,29 +102,43 @@ let backend;
 
 if (USA_FIREBASE) {
   firebase.initializeApp(firebaseConfig);
+
   const auth = firebase.auth();
   const db = firebase.firestore();
+  const storage = firebase.storage();
+
   const tasksRef = db.collection("changuitas_tasks");
   const usersRef = db.collection("changuitas_usuarios");
+
   let nombrePendiente = null;
 
   backend = {
     modo: "firebase",
+
     onAuth(cb) {
       auth.onAuthStateChanged(async user => {
         if (!user) return cb(null);
+
         let name = nombrePendiente;
+
         if (!name) {
           try {
             const doc = await usersRef.doc(user.uid).get();
             name = doc.exists ? doc.data().name : null;
           } catch (e) {}
         }
-        cb({ uid: user.uid, email: user.email, name: name || user.email });
+
+        cb({
+          uid: user.uid,
+          email: user.email,
+          name: name || user.email
+        });
       });
     },
+
     async register(name, email, pass) {
       nombrePendiente = name;
+
       try {
         const cred = await auth.createUserWithEmailAndPassword(email, pass);
         await usersRef.doc(cred.user.uid).set({ name, email });
@@ -119,37 +146,81 @@ if (USA_FIREBASE) {
         nombrePendiente = null;
       }
     },
+
     login(email, pass) {
       return auth.signInWithEmailAndPassword(email, pass);
     },
+
     logout() {
       return auth.signOut();
     },
+
     subscribeTasks(cb) {
       tasksRef.orderBy("createdAt", "desc").onSnapshot(
         snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
         err => console.error("Error de Firebase:", err)
       );
     },
+
+    async uploadTaskImage(file) {
+      const imagen = await prepararImagen(file);
+
+      const ruta = "task-images/" + yo.uid + "/" +
+        Date.now() + "-" +
+        Math.random().toString(36).slice(2) + ".jpg";
+
+      const referencia = storage.ref().child(ruta);
+
+      await referencia.put(imagen, {
+        contentType: "image/jpeg"
+      });
+
+      const imageUrl = await referencia.getDownloadURL();
+
+      return {
+        imageUrl,
+        imagePath: ruta
+      };
+    },
+
+    async deleteTaskImage(path) {
+      if (!path) return;
+
+      try {
+        await storage.ref().child(path).delete();
+      } catch (e) {
+        console.error("No se pudo eliminar la foto:", e);
+      }
+    },
+
     addTask(t) {
       return tasksRef.add({
         ...t,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     },
+
     apply(id, applicant) {
       return tasksRef.doc(id).update({
         applicants: firebase.firestore.FieldValue.arrayUnion(applicant)
       });
     },
+
     updateTask(id, patch) {
       return tasksRef.doc(id).update(patch);
     },
-    deleteTask(id) {
-      return tasksRef.doc(id).delete();
+
+    async deleteTask(id, imagePath) {
+      await tasksRef.doc(id).delete();
+
+      if (imagePath) {
+        await this.deleteTaskImage(imagePath);
+      }
     }
   };
+
 } else {
+
   const K_USERS = "changuitas_usuarios";
   const K_SESION = "changuitas_sesion";
   const K_TAREAS = "changuitas_tareas";
@@ -163,16 +234,19 @@ if (USA_FIREBASE) {
     }
   };
 
-  const guardar = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const guardar = (k, v) =>
+    localStorage.setItem(k, JSON.stringify(v));
 
   const hash = async txt => {
     if (!window.crypto || !crypto.subtle) {
       throw { code: "local/sin-crypto" };
     }
+
     const buf = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(txt)
     );
+
     return Array.from(new Uint8Array(buf))
       .map(b => b.toString(16).padStart(2, "0"))
       .join("");
@@ -188,6 +262,7 @@ if (USA_FIREBASE) {
   const modificar = (id, fn) => {
     const ts = leer(K_TAREAS, []);
     const t = ts.find(x => x.id === id);
+
     if (t) {
       fn(t);
       guardar(K_TAREAS, ts);
@@ -260,6 +335,7 @@ if (USA_FIREBASE) {
 
     async register(name, email, pass) {
       email = email.toLowerCase();
+
       const users = leer(K_USERS, []);
 
       if (users.some(u => u.email === email)) {
@@ -271,6 +347,7 @@ if (USA_FIREBASE) {
       }
 
       const uid = "u" + Date.now();
+
       users.push({
         uid,
         name,
@@ -281,20 +358,28 @@ if (USA_FIREBASE) {
       guardar(K_USERS, users);
 
       const sesion = { uid, name, email };
+
       guardar(K_SESION, sesion);
       cbAuth(sesion);
     },
 
     async login(email, pass) {
       email = email.toLowerCase();
+
       const u = leer(K_USERS, []).find(x => x.email === email);
 
       if (!u) throw { code: "local/sin-cuenta" };
+
       if (u.hash !== await hash(u.uid + pass)) {
         throw { code: "auth/wrong-password" };
       }
 
-      const sesion = { uid: u.uid, name: u.name, email: u.email };
+      const sesion = {
+        uid: u.uid,
+        name: u.name,
+        email: u.email
+      };
+
       guardar(K_SESION, sesion);
       cbAuth(sesion);
     },
@@ -306,15 +391,40 @@ if (USA_FIREBASE) {
 
     subscribeTasks(cb) {
       cbTareas = cb;
+
       if (localStorage.getItem(K_TAREAS) === null) {
         guardar(K_TAREAS, TAREAS_EJEMPLO);
       }
+
       emitir();
+    },
+
+    async uploadTaskImage(file) {
+      const imagen = await prepararImagen(file);
+
+      return new Promise((resolve, reject) => {
+        const lector = new FileReader();
+
+        lector.onload = () => {
+          resolve({
+            imageUrl: lector.result,
+            imagePath: ""
+          });
+        };
+
+        lector.onerror = reject;
+        lector.readAsDataURL(imagen);
+      });
     },
 
     async addTask(t) {
       const ts = leer(K_TAREAS, []);
-      ts.unshift({ ...t, id: "t" + Date.now() });
+
+      ts.unshift({
+        ...t,
+        id: "t" + Date.now()
+      });
+
       guardar(K_TAREAS, ts);
       emitir();
     },
@@ -333,14 +443,133 @@ if (USA_FIREBASE) {
 
     async deleteTask(id) {
       const ts = leer(K_TAREAS, []).filter(t => t.id !== id);
+
       guardar(K_TAREAS, ts);
       emitir();
     }
   };
 }
 
+/* FUNCIONES PARA LAS FOTOS */
+
+let fotoSeleccionada = null;
+let vistaPreviaFoto = "";
+
+function prepararImagen(file) {
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+
+    lector.onload = () => {
+      const imagen = new Image();
+
+      imagen.onload = () => {
+        const maximo = 1200;
+
+        let ancho = imagen.width;
+        let alto = imagen.height;
+
+        if (ancho > alto && ancho > maximo) {
+          alto = alto * (maximo / ancho);
+          ancho = maximo;
+        } else if (alto > maximo) {
+          ancho = ancho * (maximo / alto);
+          alto = maximo;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(ancho);
+        canvas.height = Math.round(alto);
+
+        const contexto = canvas.getContext("2d");
+
+        contexto.drawImage(
+          imagen,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+
+        canvas.toBlob(blob => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error("No se pudo preparar la imagen."));
+          }
+        }, "image/jpeg", 0.75);
+      };
+
+      imagen.onerror = () => reject(new Error("No se pudo leer la imagen."));
+      imagen.src = lector.result;
+    };
+
+    lector.onerror = () => reject(new Error("No se pudo cargar el archivo."));
+    lector.readAsDataURL(file);
+  });
+}
+
+function previewTaskImage(input) {
+  const archivo = input.files[0];
+
+  $("imageError").textContent = "";
+
+  if (!archivo) {
+    removeTaskImage();
+    return;
+  }
+
+  if (!archivo.type.startsWith("image/")) {
+    $("imageError").textContent = "Seleccioná un archivo de imagen.";
+    input.value = "";
+    fotoSeleccionada = null;
+    return;
+  }
+
+  if (archivo.size > 5 * 1024 * 1024) {
+    $("imageError").textContent = "La imagen no puede superar los 5 MB.";
+    input.value = "";
+    fotoSeleccionada = null;
+    return;
+  }
+
+  if (vistaPreviaFoto) {
+    URL.revokeObjectURL(vistaPreviaFoto);
+  }
+
+  fotoSeleccionada = archivo;
+  vistaPreviaFoto = URL.createObjectURL(archivo);
+
+  $("imagePreview").innerHTML = `
+    <img src="${vistaPreviaFoto}" alt="Vista previa de la foto">
+    <button type="button" class="btn btn-danger btn-small"
+      onclick="removeTaskImage()">Quitar foto</button>
+  `;
+}
+
+function removeTaskImage() {
+  const input = $("postImage");
+
+  if (input) input.value = "";
+
+  if (vistaPreviaFoto) {
+    URL.revokeObjectURL(vistaPreviaFoto);
+  }
+
+  vistaPreviaFoto = "";
+  fotoSeleccionada = null;
+
+  const preview = $("imagePreview");
+  const error = $("imageError");
+
+  if (preview) preview.innerHTML = "";
+  if (error) error.textContent = "";
+}
+
+/* FUNCIONES GENERALES */
+
 const $ = id => document.getElementById(id);
 const fmt = n => "$" + Number(n).toLocaleString("es-AR");
+
 const statusLabel = s => ({
   abierta: "Abierta",
   asignada: "Asignada",
@@ -368,15 +597,21 @@ let estrellasSeleccionadas = 0;
 
 function setAuthMode(mode) {
   authMode = mode;
+
   const reg = mode === "register";
 
   $("tabLogin").classList.toggle("active", !reg);
   $("tabRegister").classList.toggle("active", reg);
   $("authNameWrap").classList.toggle("hidden", !reg);
+
   $("authPassword").autocomplete = reg
     ? "new-password"
     : "current-password";
-  $("authBtn").textContent = reg ? "Crear cuenta" : "Iniciar sesión";
+
+  $("authBtn").textContent = reg
+    ? "Crear cuenta"
+    : "Iniciar sesión";
+
   $("authError").textContent = "";
 }
 
@@ -460,22 +695,33 @@ const TITULOS = {
 
 function showScreen(screen, push = true) {
   currentScreen = screen;
+
   if (push) pila.push(screen);
 
   $("backBtn").classList.toggle("hidden", screen === "feed");
   $("fab").classList.toggle("hidden", screen !== "feed");
 
-  Object.values(NAV).forEach(id => $(id).classList.remove("active"));
-  if (NAV[screen]) $(NAV[screen]).classList.add("active");
+  Object.values(NAV).forEach(id =>
+    $(id).classList.remove("active")
+  );
+
+  if (NAV[screen]) {
+    $(NAV[screen]).classList.add("active");
+  }
 
   $("headerTitle").textContent = TITULOS[screen] || "Changuitas";
+
   render[screen]();
   $("main").scrollTop = 0;
 }
 
 function goBack() {
   pila.pop();
-  showScreen(pila[pila.length - 1] || "feed", false);
+
+  showScreen(
+    pila[pila.length - 1] || "feed",
+    false
+  );
 }
 
 function openDetail(id) {
@@ -493,12 +739,17 @@ function tarjeta(t, conDescripcion) {
         <span class="card-title">${escapeHtml(t.title)}</span>
         <span class="badge">${fmt(t.reward)}</span>
       </div>
-      ${conDescripcion ? `<p class="card-desc">${escapeHtml(t.desc)}</p>` : ""}
+
+      ${conDescripcion
+        ? `<p class="card-desc">${escapeHtml(t.desc)}</p>`
+        : ""}
+
       ${t.location ? `
         <div class="card-meta loc">
           <span aria-hidden="true">📍</span>
           <span>${escapeHtml(t.location)}</span>
         </div>` : ""}
+
       <div class="card-meta">
         <span class="status status-${t.status}">${statusLabel(t.status)}</span>
         <span>${n} postulante${n !== 1 ? "s" : ""}</span>
@@ -513,9 +764,11 @@ function renderFeed() {
       <p>Con Changuita, conectá con personas que necesitan una mano o encontrá a alguien para realizar esa tarea.</p>
       <button class="cta" onclick="showScreen('post')">Publicar una tarea</button>
     </section>
+
     <input class="search" placeholder="Buscar tareas o ubicaciones"
       value="${escapeHtml(busqueda)}"
       oninput="filterFeed(this.value)">
+
     <div id="feedList" class="grid"></div>`;
 
   drawFeedList();
@@ -549,7 +802,9 @@ function renderMaterials() {
         <span class="mat-num">1</span>
         <h2>¿Dónde comprar los materiales?</h2>
       </div>
+
       <p class="mat-text">Según lo que necesites para la tarea, podés conseguirlo en:</p>
+
       <div class="chips">
         ${LUGARES.map(l => `<span class="chip">${escapeHtml(l)}</span>`).join("")}
       </div>
@@ -561,7 +816,9 @@ function renderMaterials() {
         <h2>Corralones adheridos</h2>
         <span class="tag-desc">-${DESCUENTO_CORRALON}%</span>
       </div>
+
       <p class="mat-text">Si usás estos corralones, tenés ${DESCUENTO_CORRALON}% de descuento en tus materiales.</p>
+
       <div class="grid">
         ${CORRALONES.map(c => `
           <div class="card static">
@@ -577,7 +834,9 @@ function renderMaterials() {
         <h2>Productos de la empresa</h2>
         <span class="tag-desc">-${DESCUENTO_EMPRESA}%</span>
       </div>
+
       <p class="mat-text">Si usás productos de la empresa, tenés ${DESCUENTO_EMPRESA}% de descuento.</p>
+
       <div class="grid">
         ${PRODUCTOS_EMPRESA.map(p => `
           <div class="card static">
@@ -587,6 +846,8 @@ function renderMaterials() {
       </div>
     </section>`;
 }
+
+/* PUBLICAR TAREA CON FOTO */
 
 function renderPost() {
   $("main").innerHTML = `
@@ -614,7 +875,15 @@ function renderPost() {
     <label for="postReward">Recompensa ofrecida (ARS)</label>
     <input type="number" id="postReward" placeholder="Ej: 15000" min="1">
 
+    <label for="postImage">Foto de la tarea (opcional)</label>
+    <input type="file" id="postImage" accept="image/*"
+      onchange="previewTaskImage(this)">
+
+    <div id="imagePreview" class="image-preview"></div>
+    <p id="imageError" class="error"></p>
+
     <div id="postError" class="error"></div>
+
     <button class="btn btn-primary" id="postBtn" onclick="submitTask()">Publicar tarea</button>`;
 }
 
@@ -625,15 +894,29 @@ async function submitTask() {
   const reward = $("postReward").value;
 
   if (!title || !desc || !location || !reward || Number(reward) <= 0) {
-    $("postError").textContent = "Completá todos los campos con datos válidos, incluida la ubicación.";
+    $("postError").textContent =
+      "Completá todos los campos con datos válidos, incluida la ubicación.";
     return;
   }
 
+  if ($("imageError").textContent) return;
+
   const btn = $("postBtn");
+
   btn.disabled = true;
   btn.textContent = "Publicando...";
 
+  let datosImagen = {};
+
   try {
+    if (fotoSeleccionada) {
+      btn.textContent = "Subiendo foto...";
+
+      datosImagen = await backend.uploadTaskImage(fotoSeleccionada);
+    }
+
+    btn.textContent = "Publicando tarea...";
+
     await backend.addTask({
       title,
       desc,
@@ -644,19 +927,31 @@ async function submitTask() {
       assignedTo: null,
       assignedToId: null,
       postedBy: yo.name,
-      postedById: yo.uid
+      postedById: yo.uid,
+      imageUrl: datosImagen.imageUrl || "",
+      imagePath: datosImagen.imagePath || ""
     });
+
+    removeTaskImage();
 
     busqueda = "";
     showScreen("feed");
+
   } catch (e) {
+    if (datosImagen.imagePath && backend.deleteTaskImage) {
+      await backend.deleteTaskImage(datosImagen.imagePath);
+    }
+
     $("postError").textContent =
       "No se pudo publicar (" + (e.code || "error") + "): " +
       (e.message || "error desconocido");
+
     btn.disabled = false;
     btn.textContent = "Publicar tarea";
   }
 }
+
+/* DETALLE DE TAREA */
 
 function renderDetail() {
   const t = tasks.find(x => x.id === currentTaskId);
@@ -687,6 +982,7 @@ function renderDetail() {
               </div>
               <div class="applicant-msg">${escapeHtml(a.msg)}</div>
             </div>
+
             ${esMia
               ? `<button class="btn btn-secondary btn-small" onclick="selectCandidate(${i})">Elegir</button>`
               : ""}
@@ -702,6 +998,7 @@ function renderDetail() {
     acciones = `
       <div class="section-label">Asignada a</div>
       <p style="font-weight:600;">${escapeHtml(t.assignedTo)}</p>
+
       ${esMia
         ? `<button class="btn btn-primary" onclick="confirmAndPay()">Confirmar cumplimiento y pagar</button>`
         : `<p class="empty-inline">
@@ -748,6 +1045,7 @@ function renderDetail() {
               placeholder="Comentario opcional"></textarea>
 
             <p id="ratingError" class="error"></p>
+
             <button class="btn btn-primary" id="ratingBtn"
               onclick="guardarCalificacion()">Enviar calificación</button>
           </div>`;
@@ -757,7 +1055,7 @@ function renderDetail() {
     const opiniones = Object.values(calificaciones);
 
     const opinionesHtml = opiniones.length ? `
-      <div class="section-label">Calificaciones de esta postulante </div>
+      <div class="section-label">Calificaciones de esta postulante</div>
       ${opiniones.map(r => `
         <div class="rating-box">
           <strong>${escapeHtml(r.byName || "Usuario")}</strong>
@@ -771,9 +1069,11 @@ function renderDetail() {
 
     acciones = `
       <div class="section-label">Estado</div>
+
       <p style="font-weight:600; color:var(--green);">
         ✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo || "el trabajador")}.
       </p>
+
       ${bloqueCalificacion}
       ${opinionesHtml}`;
   }
@@ -791,7 +1091,13 @@ function renderDetail() {
       </p>
 
       <div class="detail-reward">${fmt(t.reward)}</div>
+
       <div class="detail-desc">${escapeHtml(t.desc)}</div>
+
+      ${t.imageUrl ? `
+        <div class="task-detail-image">
+          <img src="${escapeHtml(t.imageUrl)}" alt="Foto de la tarea">
+        </div>` : ""}
 
       ${t.location
         ? `<div class="zona"><span aria-hidden="true">📍</span><strong>Ubicación:</strong> ${escapeHtml(t.location)}</div>`
@@ -810,10 +1116,14 @@ function seleccionarEstrellas(cantidad) {
 
   for (let i = 1; i <= 5; i++) {
     const boton = $("estrella" + i);
-    if (boton) boton.classList.toggle("on", i <= cantidad);
+
+    if (boton) {
+      boton.classList.toggle("on", i <= cantidad);
+    }
   }
 
   const error = $("ratingError");
+
   if (error) error.textContent = "";
 }
 
@@ -898,6 +1208,7 @@ async function applyToTask() {
   const t = tasks.find(x => x.id === currentTaskId);
 
   if (!t || t.status !== "abierta" || t.postedById === yo.uid) return;
+
   if ((t.applicants || []).some(a => a.uid === yo.uid)) return;
 
   try {
@@ -917,6 +1228,7 @@ async function selectCandidate(i) {
   if (!t || t.status !== "abierta" || t.postedById !== yo.uid) return;
 
   const a = (t.applicants || [])[i];
+
   if (!a) return;
 
   try {
@@ -942,6 +1254,8 @@ async function confirmAndPay() {
   }
 }
 
+/* ELIMINAR TAREA Y SU FOTO */
+
 async function deleteTask(id) {
   const t = tasks.find(x => x.id === id);
 
@@ -957,10 +1271,16 @@ async function deleteTask(id) {
   if (!confirmar) return;
 
   try {
-    await backend.deleteTask(id);
+    await backend.deleteTask(id, t.imagePath);
+
     busqueda = "";
     pila = ["feed"];
-    showScreen(currentScreen === "myTasks" ? "myTasks" : "feed", false);
+
+    showScreen(
+      currentScreen === "myTasks" ? "myTasks" : "feed",
+      false
+    );
+
   } catch (e) {
     avisarError(e);
   }
@@ -975,7 +1295,7 @@ function avisarError(e) {
   let tip = "Revisá la conexión e intentá de nuevo.";
 
   if (code === "permission-denied" || code === "firestore/permission-denied") {
-    tip = "Firebase rechazó la operación por las reglas de seguridad. Hay que revisar las reglas de Firestore para permitir que solo quien publicó la tarea pueda eliminarla.";
+    tip = "Firebase rechazó la operación por las reglas de seguridad. Hay que revisar las reglas de seguridad de Firestore.";
   } else if (code === "unavailable" || code === "deadline-exceeded") {
     tip = "Firebase no respondió. Revisá la conexión a internet y el estado del servicio.";
   }
@@ -1027,6 +1347,7 @@ function renderProfile() {
   $("main").innerHTML = `
     <div class="profile-head">
       <div class="avatar">${escapeHtml(yo.name.slice(0, 2).toUpperCase())}</div>
+
       <p class="profile-name">${escapeHtml(yo.name)}</p>
       <p class="profile-mail">${escapeHtml(yo.email || "")}</p>
 
@@ -1034,7 +1355,9 @@ function renderProfile() {
         <span class="stars-show">
           ${recibidas.length ? "★".repeat(Math.round(Number(promedio))) : "☆☆☆☆☆"}
         </span>
+
         <strong>${promedio}</strong> / 5
+
         <p class="hint">
           ${recibidas.length} calificación${recibidas.length !== 1 ? "es" : ""}
           recibida${recibidas.length !== 1 ? "s" : ""}
@@ -1044,12 +1367,15 @@ function renderProfile() {
 
     ${recibidas.length ? `
       <div class="section-label">Opiniones recibidas</div>
+
       ${recibidas.map(r => `
         <div class="rating-box">
           <strong>${escapeHtml(r.byName || "Usuario")}</strong>
+
           <div class="stars-show">
             ${"★".repeat(Number(r.stars) || 0)}${"☆".repeat(5 - (Number(r.stars) || 0))}
           </div>
+
           ${r.comment
             ? `<p class="comment">“${escapeHtml(r.comment)}”</p>`
             : `<p class="small">Sin comentario.</p>`}
@@ -1069,10 +1395,12 @@ function renderProfile() {
         <span>Tareas publicadas</span>
         <span>${mias.length}</span>
       </div>
+
       <div class="card-meta">
         <span>Tareas completadas</span>
         <span>${mias.filter(t => t.status === "completada").length}</span>
       </div>
+
       <div class="card-meta">
         <span>Postulaciones</span>
         <span>${postulaciones}</span>
@@ -1100,12 +1428,14 @@ const render = {
 if (backend.modo === "local") {
   $("authNote").textContent =
     "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
+
   $("authNote").classList.remove("hidden");
 }
 
 if (backend.modo === "firebase" && location.protocol === "file:") {
   $("authNote").textContent =
     "Para usar la versión en línea abrí la página desde un enlace (https) o con Live Server. Con doble clic sobre el archivo, Firebase no deja iniciar sesión.";
+
   $("authNote").classList.remove("hidden");
 }
 
@@ -1127,8 +1457,10 @@ backend.onAuth(user => {
   if (user) {
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
+
     pila = ["feed"];
     showScreen("feed", false);
+
   } else {
     $("app").classList.add("hidden");
     $("authScreen").classList.remove("hidden");
