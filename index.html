@@ -69,20 +69,18 @@ const firebaseConfig = {
 };
 const USA_FIREBASE = !firebaseConfig.apiKey.startsWith("TU_");
 
-
-const DESCUENTO_CORRALON = 10;   
-const DESCUENTO_EMPRESA = 15;   
+const DESCUENTO_CORRALON = 10;
+const DESCUENTO_EMPRESA = 15;
 const LUGARES = ["Corralones", "Ferreterías", "Pinturerías", "Casas de electricidad", "Sanitarios y plomería", "Maderas y aberturas"];
 const CORRALONES = [
-  { nombre: "Disensa", detalle: "Cemento, cal, arena, ladrillos, hierros, techos y pinturas " },
-  { nombre: "Barugel Azulay", detalle: "Cerámicos, porcellanatos, griferías, sanitarios y bachas" },
-  { nombre: "Materiales Echeverría", detalle: "Cemento, cal, arena, piedra partida, ladrillos, hierros y mallas" }
+  { nombre: "Corralón Ejemplo 1", detalle: "Cemento, cal, arena, ladrillos y hierros" },
+  { nombre: "Corralón Ejemplo 2", detalle: "Materiales para obra y revestimientos" },
+  { nombre: "Corralón Ejemplo 3", detalle: "Aberturas, techos y sanitarios" }
 ];
 const PRODUCTOS_EMPRESA = [
   { nombre: "Producto de la empresa 1", detalle: "Descripción del producto" },
   { nombre: "Producto de la empresa 2", detalle: "Descripción del producto" }
 ];
-
 
 let backend;
 
@@ -92,7 +90,7 @@ if (USA_FIREBASE) {
   const db = firebase.firestore();
   const tasksRef = db.collection("changuitas_tasks");
   const usersRef = db.collection("changuitas_usuarios");
-  let nombrePendiente = null; 
+  let nombrePendiente = null;
 
   backend = {
     modo: "firebase",
@@ -101,7 +99,10 @@ if (USA_FIREBASE) {
         if (!user) return cb(null);
         let name = nombrePendiente;
         if (!name) {
-          try { const doc = await usersRef.doc(user.uid).get(); name = doc.exists ? doc.data().name : null; } catch (e) {}
+          try {
+            const doc = await usersRef.doc(user.uid).get();
+            name = doc.exists ? doc.data().name : null;
+          } catch (e) {}
         }
         cb({ uid: user.uid, email: user.email, name: name || user.email });
       });
@@ -111,80 +112,222 @@ if (USA_FIREBASE) {
       try {
         const cred = await auth.createUserWithEmailAndPassword(email, pass);
         await usersRef.doc(cred.user.uid).set({ name, email });
-      } finally { nombrePendiente = null; }
+      } finally {
+        nombrePendiente = null;
+      }
     },
-    login(email, pass) { return auth.signInWithEmailAndPassword(email, pass); },
-    logout() { return auth.signOut(); },
+    login(email, pass) {
+      return auth.signInWithEmailAndPassword(email, pass);
+    },
+    logout() {
+      return auth.signOut();
+    },
     subscribeTasks(cb) {
       tasksRef.orderBy("createdAt", "desc").onSnapshot(
         snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
         err => console.error("Error de Firebase:", err)
       );
     },
-    addTask(t) { return tasksRef.add({ ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); },
-
-    apply(id, applicant) { return tasksRef.doc(id).update({ applicants: firebase.firestore.FieldValue.arrayUnion(applicant) }); },
-    updateTask(id, patch) { return tasksRef.doc(id).update(patch); },
-    deleteTask(id) { return tasksRef.doc(id).delete(); }
+    addTask(t) {
+      return tasksRef.add({
+        ...t,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    },
+    apply(id, applicant) {
+      return tasksRef.doc(id).update({
+        applicants: firebase.firestore.FieldValue.arrayUnion(applicant)
+      });
+    },
+    updateTask(id, patch) {
+      return tasksRef.doc(id).update(patch);
+    },
+    deleteTask(id) {
+      return tasksRef.doc(id).delete();
+    }
   };
 } else {
-  const K_USERS = "changuitas_usuarios", K_SESION = "changuitas_sesion", K_TAREAS = "changuitas_tareas";
-  const leer = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? def : v; } catch (e) { return def; } };
-  const guardar = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-  const hash = async txt => {
-    if (!window.crypto || !crypto.subtle) throw { code: "local/sin-crypto" };
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const K_USERS = "changuitas_usuarios";
+  const K_SESION = "changuitas_sesion";
+  const K_TAREAS = "changuitas_tareas";
+
+  const leer = (k, def) => {
+    try {
+      const v = JSON.parse(localStorage.getItem(k));
+      return v === null ? def : v;
+    } catch (e) {
+      return def;
+    }
   };
-  let cbAuth = () => {}, cbTareas = null;
-  const emitir = () => { if (cbTareas) cbTareas(leer(K_TAREAS, [])); };
+
+  const guardar = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+  const hash = async txt => {
+    if (!window.crypto || !crypto.subtle) {
+      throw { code: "local/sin-crypto" };
+    }
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(txt)
+    );
+    return Array.from(new Uint8Array(buf))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+  };
+
+  let cbAuth = () => {};
+  let cbTareas = null;
+
+  const emitir = () => {
+    if (cbTareas) cbTareas(leer(K_TAREAS, []));
+  };
+
   const modificar = (id, fn) => {
     const ts = leer(K_TAREAS, []);
     const t = ts.find(x => x.id === id);
-    if (t) { fn(t); guardar(K_TAREAS, ts); emitir(); }
+    if (t) {
+      fn(t);
+      guardar(K_TAREAS, ts);
+      emitir();
+    }
   };
-  window.addEventListener("storage", e => { if (e.key === K_TAREAS) emitir(); });
+
+  window.addEventListener("storage", e => {
+    if (e.key === K_TAREAS) emitir();
+  });
 
   const TAREAS_EJEMPLO = [
-    { id: "ej1", title: "Armar mueble de IKEA", desc: "Necesito armar un ropero de 2 puertas hoy en la tarde. Tengo las herramientas básicas.", reward: 15000, status: "abierta", postedBy: "Fernanda R.", postedById: "ej-fernanda", applicants: [{ uid: "ej-carlos", name: "Carlos M.", msg: "Tengo experiencia armando muebles, puedo ir hoy 18hs." }], assignedTo: null, assignedToId: null },
-    { id: "ej2", title: "Repartir volantes", desc: "Repartir 200 volantes en el centro de la ciudad, aprox 2 horas.", reward: 8000, status: "abierta", postedBy: "Juan P.", postedById: "ej-juan", applicants: [], assignedTo: null, assignedToId: null },
-    { id: "ej3", title: "Limpieza de patio", desc: "Cortar pasto y sacar hojas de un patio mediano.", reward: 20000, status: "asignada", postedBy: "Lucía G.", postedById: "ej-lucia", applicants: [{ uid: "ej-diego", name: "Diego S.", msg: "Trabajo de jardinería, disponible el sábado." }], assignedTo: "Diego S.", assignedToId: "ej-diego" }
+    {
+      id: "ej1",
+      title: "Armar mueble de IKEA",
+      desc: "Necesito armar un ropero de 2 puertas hoy en la tarde. Tengo las herramientas básicas.",
+      reward: 15000,
+      status: "abierta",
+      postedBy: "Fernanda R.",
+      postedById: "ej-fernanda",
+      applicants: [
+        {
+          uid: "ej-carlos",
+          name: "Carlos M.",
+          msg: "Tengo experiencia armando muebles, puedo ir hoy 18hs."
+        }
+      ],
+      assignedTo: null,
+      assignedToId: null
+    },
+    {
+      id: "ej2",
+      title: "Repartir volantes",
+      desc: "Repartir 200 volantes en el centro de la ciudad, aprox 2 horas.",
+      reward: 8000,
+      status: "abierta",
+      postedBy: "Juan P.",
+      postedById: "ej-juan",
+      applicants: [],
+      assignedTo: null,
+      assignedToId: null
+    },
+    {
+      id: "ej3",
+      title: "Limpieza de patio",
+      desc: "Cortar pasto y sacar hojas de un patio mediano.",
+      reward: 20000,
+      status: "asignada",
+      postedBy: "Lucía G.",
+      postedById: "ej-lucia",
+      applicants: [
+        {
+          uid: "ej-diego",
+          name: "Diego S.",
+          msg: "Trabajo de jardinería, disponible el sábado."
+        }
+      ],
+      assignedTo: "Diego S.",
+      assignedToId: "ej-diego"
+    }
   ];
 
   backend = {
     modo: "local",
-    onAuth(cb) { cbAuth = cb; cb(leer(K_SESION, null)); },
+
+    onAuth(cb) {
+      cbAuth = cb;
+      cb(leer(K_SESION, null));
+    },
+
     async register(name, email, pass) {
       email = email.toLowerCase();
       const users = leer(K_USERS, []);
-      if (users.some(u => u.email === email)) throw { code: "auth/email-already-in-use" };
-      if (pass.length < 6) throw { code: "auth/weak-password" };
+
+      if (users.some(u => u.email === email)) {
+        throw { code: "auth/email-already-in-use" };
+      }
+
+      if (pass.length < 6) {
+        throw { code: "auth/weak-password" };
+      }
+
       const uid = "u" + Date.now();
-      users.push({ uid, name, email, hash: await hash(uid + pass) });
+      users.push({
+        uid,
+        name,
+        email,
+        hash: await hash(uid + pass)
+      });
+
       guardar(K_USERS, users);
+
       const sesion = { uid, name, email };
       guardar(K_SESION, sesion);
       cbAuth(sesion);
     },
+
     async login(email, pass) {
       email = email.toLowerCase();
       const u = leer(K_USERS, []).find(x => x.email === email);
-     
+
       if (!u) throw { code: "local/sin-cuenta" };
-      if (u.hash !== await hash(u.uid + pass)) throw { code: "auth/wrong-password" };
+      if (u.hash !== await hash(u.uid + pass)) {
+        throw { code: "auth/wrong-password" };
+      }
+
       const sesion = { uid: u.uid, name: u.name, email: u.email };
       guardar(K_SESION, sesion);
       cbAuth(sesion);
     },
-    async logout() { localStorage.removeItem(K_SESION); cbAuth(null); },
+
+    async logout() {
+      localStorage.removeItem(K_SESION);
+      cbAuth(null);
+    },
+
     subscribeTasks(cb) {
       cbTareas = cb;
-      if (localStorage.getItem(K_TAREAS) === null) guardar(K_TAREAS, TAREAS_EJEMPLO);
+      if (localStorage.getItem(K_TAREAS) === null) {
+        guardar(K_TAREAS, TAREAS_EJEMPLO);
+      }
       emitir();
     },
-    async addTask(t) { const ts = leer(K_TAREAS, []); ts.unshift({ ...t, id: "t" + Date.now() }); guardar(K_TAREAS, ts); emitir(); },
-    async apply(id, applicant) { modificar(id, t => { if (!t.applicants.some(a => a.uid === applicant.uid)) t.applicants.push(applicant); }); },
-    async updateTask(id, patch) { modificar(id, t => Object.assign(t, patch)); },
+
+    async addTask(t) {
+      const ts = leer(K_TAREAS, []);
+      ts.unshift({ ...t, id: "t" + Date.now() });
+      guardar(K_TAREAS, ts);
+      emitir();
+    },
+
+    async apply(id, applicant) {
+      modificar(id, t => {
+        if (!t.applicants.some(a => a.uid === applicant.uid)) {
+          t.applicants.push(applicant);
+        }
+      });
+    },
+
+    async updateTask(id, patch) {
+      modificar(id, t => Object.assign(t, patch));
+    },
+
     async deleteTask(id) {
       const ts = leer(K_TAREAS, []).filter(t => t.id !== id);
       guardar(K_TAREAS, ts);
@@ -195,26 +338,41 @@ if (USA_FIREBASE) {
 
 const $ = id => document.getElementById(id);
 const fmt = n => "$" + Number(n).toLocaleString("es-AR");
-const statusLabel = s => ({ abierta: "Abierta", asignada: "Asignada", completada: "Completada" }[s]);
+const statusLabel = s => ({
+  abierta: "Abierta",
+  asignada: "Asignada",
+  completada: "Completada"
+}[s]);
+
 function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
 }
 
-let yo = null;              
+let yo = null;
 let tasks = [];
 let currentTaskId = null;
 let currentScreen = "feed";
 let pila = ["feed"];
 let busqueda = "";
 let authMode = "login";
+let estrellasSeleccionadas = 0;
 
 function setAuthMode(mode) {
   authMode = mode;
   const reg = mode === "register";
+
   $("tabLogin").classList.toggle("active", !reg);
   $("tabRegister").classList.toggle("active", reg);
   $("authNameWrap").classList.toggle("hidden", !reg);
-  $("authPassword").autocomplete = reg ? "new-password" : "current-password";
+  $("authPassword").autocomplete = reg
+    ? "new-password"
+    : "current-password";
   $("authBtn").textContent = reg ? "Crear cuenta" : "Iniciar sesión";
   $("authError").textContent = "";
 }
@@ -224,16 +382,28 @@ async function submitAuth() {
   const email = $("authEmail").value.trim();
   const password = $("authPassword").value;
   const err = $("authError");
+
   err.textContent = "";
 
-  if (!email || !password || (authMode === "register" && !name)) { err.textContent = "Completá todos los campos."; return; }
-  if (!/^\S+@\S+\.\S+$/.test(email)) { err.textContent = "Ingresá un correo válido."; return; }
+  if (!email || !password || (authMode === "register" && !name)) {
+    err.textContent = "Completá todos los campos.";
+    return;
+  }
+
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    err.textContent = "Ingresá un correo válido.";
+    return;
+  }
 
   const btn = $("authBtn");
   btn.disabled = true;
+
   try {
-    if (authMode === "register") await backend.register(name, email, password);
-    else await backend.login(email, password);
+    if (authMode === "register") {
+      await backend.register(name, email, password);
+    } else {
+      await backend.login(email, password);
+    }
   } catch (e) {
     err.textContent = traducirError(e.code);
   } finally {
@@ -241,7 +411,9 @@ async function submitAuth() {
   }
 }
 
-function logout() { backend.logout(); }
+function logout() {
+  backend.logout();
+}
 
 function traducirError(code) {
   return ({
@@ -262,20 +434,37 @@ function traducirError(code) {
 }
 
 ["authName", "authEmail", "authPassword"].forEach(id =>
-  $(id).addEventListener("keydown", e => { if (e.key === "Enter") submitAuth(); })
+  $(id).addEventListener("keydown", e => {
+    if (e.key === "Enter") submitAuth();
+  })
 );
 
+const NAV = {
+  feed: "navHome",
+  materials: "navMaterials",
+  myTasks: "navTasks",
+  profile: "navProfile"
+};
 
-const NAV = { feed: "navHome", materials: "navMaterials", myTasks: "navTasks", profile: "navProfile" };
-const TITULOS = { feed: "Changuitas", materials: "Materiales", post: "Publicar tarea", detail: "Detalle de tarea", myTasks: "Mis tareas", profile: "Perfil" };
+const TITULOS = {
+  feed: "Changuitas",
+  materials: "Materiales",
+  post: "Publicar tarea",
+  detail: "Detalle de tarea",
+  myTasks: "Mis tareas",
+  profile: "Perfil"
+};
 
 function showScreen(screen, push = true) {
   currentScreen = screen;
   if (push) pila.push(screen);
+
   $("backBtn").classList.toggle("hidden", screen === "feed");
   $("fab").classList.toggle("hidden", screen !== "feed");
+
   Object.values(NAV).forEach(id => $(id).classList.remove("active"));
   if (NAV[screen]) $(NAV[screen]).classList.add("active");
+
   $("headerTitle").textContent = TITULOS[screen] || "Changuitas";
   render[screen]();
   $("main").scrollTop = 0;
@@ -286,10 +475,15 @@ function goBack() {
   showScreen(pila[pila.length - 1] || "feed", false);
 }
 
-function openDetail(id) { currentTaskId = id; showScreen("detail"); }
+function openDetail(id) {
+  currentTaskId = id;
+  estrellasSeleccionadas = 0;
+  showScreen("detail");
+}
 
 function tarjeta(t, conDescripcion) {
   const n = (t.applicants || []).length;
+
   return `
     <div class="card" onclick="openDetail('${t.id}')">
       <div class="card-top">
@@ -297,7 +491,11 @@ function tarjeta(t, conDescripcion) {
         <span class="badge">${fmt(t.reward)}</span>
       </div>
       ${conDescripcion ? `<p class="card-desc">${escapeHtml(t.desc)}</p>` : ""}
-      ${t.location ? `<div class="card-meta loc"><span aria-hidden="true">📍</span><span>${escapeHtml(t.location)}</span></div>` : ""}
+      ${t.location ? `
+        <div class="card-meta loc">
+          <span aria-hidden="true">📍</span>
+          <span>${escapeHtml(t.location)}</span>
+        </div>` : ""}
       <div class="card-meta">
         <span class="status status-${t.status}">${statusLabel(t.status)}</span>
         <span>${n} postulante${n !== 1 ? "s" : ""}</span>
@@ -312,14 +510,28 @@ function renderFeed() {
       <p>Con Changuita, conectá con personas que necesitan una mano o encontrá a alguien para realizar esa tarea.</p>
       <button class="cta" onclick="showScreen('post')">Publicar una tarea</button>
     </section>
-    <input class="search" placeholder="Buscar tareas o ubicaciones" value="${escapeHtml(busqueda)}" oninput="filterFeed(this.value)">
+    <input class="search" placeholder="Buscar tareas o ubicaciones"
+      value="${escapeHtml(busqueda)}"
+      oninput="filterFeed(this.value)">
     <div id="feedList" class="grid"></div>`;
+
   drawFeedList();
 }
-function filterFeed(q) { busqueda = q; drawFeedList(); }
+
+function filterFeed(q) {
+  busqueda = q;
+  drawFeedList();
+}
+
 function drawFeedList() {
   const q = busqueda.toLowerCase();
-  const list = tasks.filter(t => String(t.title || "").toLowerCase().includes(q) || String(t.desc || "").toLowerCase().includes(q) || String(t.location || "").toLowerCase().includes(q));
+
+  const list = tasks.filter(t =>
+    String(t.title || "").toLowerCase().includes(q) ||
+    String(t.desc || "").toLowerCase().includes(q) ||
+    String(t.location || "").toLowerCase().includes(q)
+  );
+
   $("feedList").innerHTML = list.length
     ? list.map(t => tarjeta(t, true)).join("")
     : `<p class="empty">No hay tareas disponibles todavía.</p>`;
@@ -330,48 +542,75 @@ function renderMaterials() {
     <p class="mat-intro">Conseguí lo que necesitás para tu changa y ahorrá con nuestros descuentos.</p>
 
     <section class="mat-block">
-      <div class="mat-head"><span class="mat-num">1</span><h2>¿Dónde comprar los materiales?</h2></div>
+      <div class="mat-head">
+        <span class="mat-num">1</span>
+        <h2>¿Dónde comprar los materiales?</h2>
+      </div>
       <p class="mat-text">Según lo que necesites para la tarea, podés conseguirlo en:</p>
-      <div class="chips">${LUGARES.map(l => `<span class="chip">${escapeHtml(l)}</span>`).join("")}</div>
+      <div class="chips">
+        ${LUGARES.map(l => `<span class="chip">${escapeHtml(l)}</span>`).join("")}
+      </div>
     </section>
 
     <section class="mat-block">
-      <div class="mat-head"><span class="mat-num">2</span><h2>Corralones adheridos</h2><span class="tag-desc">-${DESCUENTO_CORRALON}%</span></div>
+      <div class="mat-head">
+        <span class="mat-num">2</span>
+        <h2>Corralones adheridos</h2>
+        <span class="tag-desc">-${DESCUENTO_CORRALON}%</span>
+      </div>
       <p class="mat-text">Si usás estos corralones, tenés ${DESCUENTO_CORRALON}% de descuento en tus materiales.</p>
-      <div class="grid">${CORRALONES.map(c => `
-        <div class="card static">
-          <div class="card-title">${escapeHtml(c.nombre)}</div>
-          <p class="card-desc">${escapeHtml(c.detalle)}</p>
-        </div>`).join("")}</div>
+      <div class="grid">
+        ${CORRALONES.map(c => `
+          <div class="card static">
+            <div class="card-title">${escapeHtml(c.nombre)}</div>
+            <p class="card-desc">${escapeHtml(c.detalle)}</p>
+          </div>`).join("")}
+      </div>
     </section>
 
     <section class="mat-block">
-      <div class="mat-head"><span class="mat-num">3</span><h2>Productos de la empresa</h2><span class="tag-desc">-${DESCUENTO_EMPRESA}%</span></div>
+      <div class="mat-head">
+        <span class="mat-num">3</span>
+        <h2>Productos de la empresa</h2>
+        <span class="tag-desc">-${DESCUENTO_EMPRESA}%</span>
+      </div>
       <p class="mat-text">Si usás productos de la empresa, tenés ${DESCUENTO_EMPRESA}% de descuento.</p>
-      <div class="grid">${PRODUCTOS_EMPRESA.map(p => `
-        <div class="card static">
-          <div class="card-title">${escapeHtml(p.nombre)}</div>
-          <p class="card-desc">${escapeHtml(p.detalle)}</p>
-        </div>`).join("")}</div>
+      <div class="grid">
+        ${PRODUCTOS_EMPRESA.map(p => `
+          <div class="card static">
+            <div class="card-title">${escapeHtml(p.nombre)}</div>
+            <p class="card-desc">${escapeHtml(p.detalle)}</p>
+          </div>`).join("")}
+      </div>
     </section>`;
 }
-
 
 function renderPost() {
   $("main").innerHTML = `
     <div class="post-intro">
       <div class="post-intro-icon">📍</div>
-      <div><strong>Contá dónde se necesita la ayuda</strong><p>Así las personas pueden saber si les queda cómodo llegar.</p></div>
+      <div>
+        <strong>Contá dónde se necesita la ayuda</strong>
+        <p>Así las personas pueden saber si les queda cómodo llegar.</p>
+      </div>
     </div>
+
     <label for="postTitle">Título de la tarea</label>
     <input type="text" id="postTitle" placeholder="Ej: Armar un mueble">
+
     <label for="postDesc">Descripción</label>
     <textarea id="postDesc" placeholder="Describí qué necesitás que se haga"></textarea>
+
     <label for="postLocation">Ubicación donde se realizará la tarea</label>
-    <input type="text" id="postLocation" placeholder="Ej: Parque Patricios, CABA o una dirección aproximada" autocomplete="street-address">
+    <input type="text" id="postLocation"
+      placeholder="Ej: Parque Patricios, CABA o una dirección aproximada"
+      autocomplete="street-address">
+
     <p class="hint">Por seguridad, podés indicar barrio y localidad. Compartí la dirección exacta solo si es necesario.</p>
+
     <label for="postReward">Recompensa ofrecida (ARS)</label>
     <input type="number" id="postReward" placeholder="Ej: 15000" min="1">
+
     <div id="postError" class="error"></div>
     <button class="btn btn-primary" id="postBtn" onclick="submitTask()">Publicar tarea</button>`;
 }
@@ -381,114 +620,337 @@ async function submitTask() {
   const desc = $("postDesc").value.trim();
   const location = $("postLocation").value.trim();
   const reward = $("postReward").value;
+
   if (!title || !desc || !location || !reward || Number(reward) <= 0) {
     $("postError").textContent = "Completá todos los campos con datos válidos, incluida la ubicación.";
     return;
   }
+
   const btn = $("postBtn");
-  btn.disabled = true; btn.textContent = "Publicando...";
+  btn.disabled = true;
+  btn.textContent = "Publicando...";
+
   try {
     await backend.addTask({
-      title, desc, location, reward: Number(reward), status: "abierta",
-      applicants: [], assignedTo: null, assignedToId: null,
-      postedBy: yo.name, postedById: yo.uid
+      title,
+      desc,
+      location,
+      reward: Number(reward),
+      status: "abierta",
+      applicants: [],
+      assignedTo: null,
+      assignedToId: null,
+      postedBy: yo.name,
+      postedById: yo.uid
     });
+
     busqueda = "";
     showScreen("feed");
   } catch (e) {
-    $("postError").textContent = "No se pudo publicar (" + (e.code || "error") + "): " + (e.message || "error desconocido");
-    btn.disabled = false; btn.textContent = "Publicar tarea";
+    $("postError").textContent =
+      "No se pudo publicar (" + (e.code || "error") + "): " +
+      (e.message || "error desconocido");
+    btn.disabled = false;
+    btn.textContent = "Publicar tarea";
   }
 }
 
-
 function renderDetail() {
   const t = tasks.find(x => x.id === currentTaskId);
-  if (!t) { $("main").innerHTML = `<p class="empty">Tarea no encontrada.</p>`; return; }
+
+  if (!t) {
+    $("main").innerHTML = `<p class="empty">Tarea no encontrada.</p>`;
+    return;
+  }
 
   const postulantes = t.applicants || [];
-  const esMia = t.postedById === yo.uid;                        // la publiqué yo
-  const yaMePostule = postulantes.some(a => a.uid === yo.uid);  // ya estoy en la lista
+  const esMia = t.postedById === yo.uid;
+  const yaMePostule = postulantes.some(a => a.uid === yo.uid);
   const fuiElegido = t.assignedToId === yo.uid;
 
   let acciones = "";
+
   if (t.status === "abierta") {
     acciones = `
       <div class="section-label">Postulantes (${postulantes.length})</div>
-      ${postulantes.length === 0 ? `<p class="empty-inline">Aún nadie se postuló.</p>` : postulantes.map((a, i) => `
-        <div class="applicant">
-          <div>
-            <div class="applicant-name">${escapeHtml(a.name)}${a.uid === yo.uid ? " (vos)" : ""}</div>
-            <div class="applicant-msg">${escapeHtml(a.msg)}</div>
-          </div>
-          ${esMia ? `<button class="btn btn-secondary btn-small" onclick="selectCandidate(${i})">Elegir</button>` : ""}
-        </div>`).join("")}
+
+      ${postulantes.length === 0
+        ? `<p class="empty-inline">Aún nadie se postuló.</p>`
+        : postulantes.map((a, i) => `
+          <div class="applicant">
+            <div>
+              <div class="applicant-name">
+                ${escapeHtml(a.name)}${a.uid === yo.uid ? " (vos)" : ""}
+              </div>
+              <div class="applicant-msg">${escapeHtml(a.msg)}</div>
+            </div>
+            ${esMia
+              ? `<button class="btn btn-secondary btn-small" onclick="selectCandidate(${i})">Elegir</button>`
+              : ""}
+          </div>`).join("")}
+
       ${esMia
         ? `<p class="empty-inline">Es tu tarea: elegí a un postulante de la lista.</p>`
         : yaMePostule
           ? `<button class="btn btn-primary" disabled>Ya te postulaste</button>`
           : `<button class="btn btn-primary" onclick="this.disabled = true; applyToTask()">Postularme a esta tarea</button>`}`;
+
   } else if (t.status === "asignada") {
     acciones = `
       <div class="section-label">Asignada a</div>
       <p style="font-weight:600;">${escapeHtml(t.assignedTo)}</p>
       ${esMia
         ? `<button class="btn btn-primary" onclick="confirmAndPay()">Confirmar cumplimiento y pagar</button>`
-        : `<p class="empty-inline">${fuiElegido ? "¡Te eligieron para esta tarea! Esperando que quien la publicó confirme el cumplimiento." : "Esta tarea ya fue asignada."}</p>`}`;
+        : `<p class="empty-inline">
+            ${fuiElegido
+              ? "¡Te eligieron para esta tarea! Esperando que quien la publicó confirme el cumplimiento."
+              : "Esta tarea ya fue asignada."}
+          </p>`}`;
+
   } else {
+    const calificaciones = t.ratings || {};
+    const miCalificacion = calificaciones[yo.uid];
+    const soyParticipante = esMia || fuiElegido;
+    const objetivoId = esMia ? t.assignedToId : t.postedById;
+    const objetivoNombre = esMia ? t.assignedTo : t.postedBy;
+
+    let bloqueCalificacion = "";
+
+    if (soyParticipante && objetivoId) {
+      if (miCalificacion) {
+        bloqueCalificacion = `
+          <div class="rating-box">
+            <strong>Ya calificaste esta tarea</strong>
+            <div class="stars-show">
+              ${"★".repeat(miCalificacion.stars)}${"☆".repeat(5 - miCalificacion.stars)}
+            </div>
+            ${miCalificacion.comment
+              ? `<p class="comment">“${escapeHtml(miCalificacion.comment)}”</p>`
+              : ""}
+          </div>`;
+      } else {
+        bloqueCalificacion = `
+          <div class="rating-box">
+            <strong>Calificá a ${escapeHtml(objetivoNombre || "la otra persona")}</strong>
+            <p class="small">¿Cómo fue la experiencia? Elegí de 1 a 5 estrellas.</p>
+
+            <div class="stars-pick" role="group" aria-label="Elegir calificación">
+              ${[1, 2, 3, 4, 5].map(n => `
+                <button type="button" class="star" id="estrella${n}"
+                  onclick="seleccionarEstrellas(${n})"
+                  aria-label="${n} estrellas">★</button>`).join("")}
+            </div>
+
+            <textarea id="ratingComment" maxlength="300"
+              placeholder="Comentario opcional"></textarea>
+
+            <p id="ratingError" class="error"></p>
+            <button class="btn btn-primary" id="ratingBtn"
+              onclick="guardarCalificacion()">Enviar calificación</button>
+          </div>`;
+      }
+    }
+
+    const opiniones = Object.values(calificaciones);
+
+    const opinionesHtml = opiniones.length ? `
+      <div class="section-label">Calificaciones de esta tarea</div>
+      ${opiniones.map(r => `
+        <div class="rating-box">
+          <strong>${escapeHtml(r.byName || "Usuario")}</strong>
+          <div class="stars-show">
+            ${"★".repeat(Number(r.stars) || 0)}${"☆".repeat(5 - (Number(r.stars) || 0))}
+          </div>
+          ${r.comment
+            ? `<p class="comment">“${escapeHtml(r.comment)}”</p>`
+            : ""}
+        </div>`).join("")}` : "";
+
     acciones = `
       <div class="section-label">Estado</div>
-      <p style="font-weight:600; color:#3b6d11;">✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo)}.</p>`;
+      <p style="font-weight:600; color:var(--green);">
+        ✓ Tarea completada y pagada a ${escapeHtml(t.assignedTo || "el trabajador")}.
+      </p>
+      ${bloqueCalificacion}
+      ${opinionesHtml}`;
   }
 
   $("main").innerHTML = `
     <div class="detail-wrap">
       <span class="status status-${t.status}">${statusLabel(t.status)}</span>
-      <div class="detail-title" style="margin-top:10px;">${escapeHtml(t.title)}</div>
-      <p class="applicant-msg" style="margin-bottom:6px;">Publicada por ${escapeHtml(t.postedBy || "—")}</p>
+
+      <div class="detail-title" style="margin-top:10px;">
+        ${escapeHtml(t.title)}
+      </div>
+
+      <p class="applicant-msg" style="margin-bottom:6px;">
+        Publicada por ${escapeHtml(t.postedBy || "—")}
+      </p>
+
       <div class="detail-reward">${fmt(t.reward)}</div>
       <div class="detail-desc">${escapeHtml(t.desc)}</div>
-      ${t.location ? `<div class="zona"><span aria-hidden="true">📍</span><strong>Ubicación:</strong> ${escapeHtml(t.location)}</div>` : `<div class="zona"><span aria-hidden="true">📍</span>Ubicación no especificada en esta publicación antigua.</div>`}
+
+      ${t.location
+        ? `<div class="zona"><span aria-hidden="true">📍</span><strong>Ubicación:</strong> ${escapeHtml(t.location)}</div>`
+        : `<div class="zona"><span aria-hidden="true">📍</span>Ubicación no especificada en esta publicación antigua.</div>`}
+
       ${acciones}
-      ${esMia ? `<button class="btn btn-danger" onclick="deleteTask('${t.id}')">🗑 Eliminar tarea</button>` : ""}
+
+      ${esMia
+        ? `<button class="btn btn-danger" onclick="deleteTask('${t.id}')">🗑 Eliminar tarea</button>`
+        : ""}
     </div>`;
+}
+
+function seleccionarEstrellas(cantidad) {
+  estrellasSeleccionadas = cantidad;
+
+  for (let i = 1; i <= 5; i++) {
+    const boton = $("estrella" + i);
+    if (boton) boton.classList.toggle("on", i <= cantidad);
+  }
+
+  const error = $("ratingError");
+  if (error) error.textContent = "";
+}
+
+async function guardarCalificacion() {
+  const t = tasks.find(x => x.id === currentTaskId);
+  const error = $("ratingError");
+  const boton = $("ratingBtn");
+
+  if (!t || t.status !== "completada") return;
+
+  if (estrellasSeleccionadas < 1 || estrellasSeleccionadas > 5) {
+    if (error) {
+      error.textContent = "Elegí una cantidad de estrellas antes de enviar.";
+    }
+    return;
+  }
+
+  const esMia = t.postedById === yo.uid;
+  const fuiElegido = t.assignedToId === yo.uid;
+
+  if (!esMia && !fuiElegido) {
+    if (error) {
+      error.textContent = "Solo pueden calificarse las personas que participaron de la tarea.";
+    }
+    return;
+  }
+
+  const calificaciones = { ...(t.ratings || {}) };
+
+  if (calificaciones[yo.uid]) {
+    if (error) {
+      error.textContent = "Ya enviaste tu calificación para esta tarea.";
+    }
+    return;
+  }
+
+  const objetivoId = esMia ? t.assignedToId : t.postedById;
+  const objetivoNombre = esMia ? t.assignedTo : t.postedBy;
+
+  if (!objetivoId || objetivoId === yo.uid) {
+    if (error) {
+      error.textContent = "No se pudo identificar a la otra persona de la tarea.";
+    }
+    return;
+  }
+
+  const comentario = $("ratingComment")?.value.trim() || "";
+
+  calificaciones[yo.uid] = {
+    by: yo.uid,
+    byName: yo.name,
+    targetId: objetivoId,
+    targetName: objetivoNombre || "Usuario",
+    stars: estrellasSeleccionadas,
+    comment: comentario,
+    createdAt: Date.now()
+  };
+
+  if (boton) {
+    boton.disabled = true;
+    boton.textContent = "Enviando...";
+  }
+
+  try {
+    await backend.updateTask(t.id, { ratings: calificaciones });
+    estrellasSeleccionadas = 0;
+  } catch (e) {
+    if (error) {
+      error.textContent = "No se pudo guardar la calificación. Revisá la conexión e intentá otra vez.";
+    }
+
+    if (boton) {
+      boton.disabled = false;
+      boton.textContent = "Enviar calificación";
+    }
+
+    console.error("Error al guardar la calificación:", e);
+  }
 }
 
 async function applyToTask() {
   const t = tasks.find(x => x.id === currentTaskId);
+
   if (!t || t.status !== "abierta" || t.postedById === yo.uid) return;
   if ((t.applicants || []).some(a => a.uid === yo.uid)) return;
+
   try {
-    await backend.apply(t.id, { uid: yo.uid, name: yo.name, msg: "¡Interesado en realizar esta tarea!" });
-  } catch (e) { avisarError(e); }
+    await backend.apply(t.id, {
+      uid: yo.uid,
+      name: yo.name,
+      msg: "¡Interesado en realizar esta tarea!"
+    });
+  } catch (e) {
+    avisarError(e);
+  }
 }
 
 async function selectCandidate(i) {
   const t = tasks.find(x => x.id === currentTaskId);
+
   if (!t || t.status !== "abierta" || t.postedById !== yo.uid) return;
+
   const a = (t.applicants || [])[i];
   if (!a) return;
+
   try {
-    await backend.updateTask(t.id, { status: "asignada", assignedTo: a.name, assignedToId: a.uid });
-  } catch (e) { avisarError(e); }
+    await backend.updateTask(t.id, {
+      status: "asignada",
+      assignedTo: a.name,
+      assignedToId: a.uid
+    });
+  } catch (e) {
+    avisarError(e);
+  }
 }
 
 async function confirmAndPay() {
   const t = tasks.find(x => x.id === currentTaskId);
+
   if (!t || t.status !== "asignada" || t.postedById !== yo.uid) return;
+
   try {
     await backend.updateTask(t.id, { status: "completada" });
-  } catch (e) { avisarError(e); }
+  } catch (e) {
+    avisarError(e);
+  }
 }
 
 async function deleteTask(id) {
   const t = tasks.find(x => x.id === id);
- 
+
   if (!t || !yo || t.postedById !== yo.uid) {
     alert("Solo podés eliminar las tareas que publicaste.");
     return;
   }
-  const confirmar = confirm(`¿Querés eliminar la tarea "${t.title}"? Esta acción no se puede deshacer.`);
+
+  const confirmar = confirm(
+    `¿Querés eliminar la tarea "${t.title}"? Esta acción no se puede deshacer.`
+  );
+
   if (!confirmar) return;
 
   try {
@@ -503,72 +965,162 @@ async function deleteTask(id) {
 
 function avisarError(e) {
   console.error("Error real de Firebase:", e);
+
   const code = e?.code || "sin código";
   const message = e?.message || "Sin descripción";
+
   let tip = "Revisá la conexión e intentá de nuevo.";
+
   if (code === "permission-denied" || code === "firestore/permission-denied") {
     tip = "Firebase rechazó la operación por las reglas de seguridad. Hay que revisar las reglas de Firestore para permitir que solo quien publicó la tarea pueda eliminarla.";
   } else if (code === "unavailable" || code === "deadline-exceeded") {
     tip = "Firebase no respondió. Revisá la conexión a internet y el estado del servicio.";
   }
-  alert("No se pudo completar la acción.\n\nCódigo: " + code + "\nDetalle: " + message + "\n\nQué revisar: " + tip);
+
+  alert(
+    "No se pudo completar la acción.\n\nCódigo: " + code +
+    "\nDetalle: " + message + "\n\nQué revisar: " + tip
+  );
+
   if (currentScreen === "detail") renderDetail();
 }
 
 function renderMyTasks() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
+
   $("main").innerHTML = mias.length
     ? `<div class="section-label" style="margin-top:0">Tareas que publicaste</div>
-       <div class="grid">${mias.map(t => `
-         <div>
-           ${tarjeta(t, false)}
-           <button class="btn btn-danger btn-small delete-task-list" onclick="event.stopPropagation(); deleteTask('${t.id}')">🗑 Eliminar tarea</button>
-         </div>`).join("")}</div>`
+       <div class="grid">
+         ${mias.map(t => `
+           <div>
+             ${tarjeta(t, false)}
+             <button class="btn btn-danger btn-small delete-task-list"
+               onclick="event.stopPropagation(); deleteTask('${t.id}')">
+               🗑 Eliminar tarea
+             </button>
+           </div>`).join("")}
+       </div>`
     : `<p class="empty">No publicaste tareas todavía.</p>`;
 }
 
-
 function renderProfile() {
   const mias = tasks.filter(t => t.postedById === yo.uid);
-  const postulaciones = tasks.filter(t => (t.applicants || []).some(a => a.uid === yo.uid)).length;
+
+  const postulaciones = tasks.filter(t =>
+    (t.applicants || []).some(a => a.uid === yo.uid)
+  ).length;
+
+  const recibidas = tasks
+    .flatMap(t => Object.values(t.ratings || {}))
+    .filter(r => r.targetId === yo.uid);
+
+  const promedio = recibidas.length
+    ? (
+        recibidas.reduce((total, r) => total + (Number(r.stars) || 0), 0) /
+        recibidas.length
+      ).toFixed(1)
+    : "—";
+
   $("main").innerHTML = `
     <div class="profile-head">
       <div class="avatar">${escapeHtml(yo.name.slice(0, 2).toUpperCase())}</div>
       <p class="profile-name">${escapeHtml(yo.name)}</p>
       <p class="profile-mail">${escapeHtml(yo.email || "")}</p>
+
+      <div class="profile-rep">
+        <span class="stars-show">
+          ${recibidas.length ? "★".repeat(Math.round(Number(promedio))) : "☆☆☆☆☆"}
+        </span>
+        <strong>${promedio}</strong> / 5
+        <p class="hint">
+          ${recibidas.length} calificación${recibidas.length !== 1 ? "es" : ""}
+          recibida${recibidas.length !== 1 ? "s" : ""}
+        </p>
+      </div>
     </div>
+
+    ${recibidas.length ? `
+      <div class="section-label">Opiniones recibidas</div>
+      ${recibidas.map(r => `
+        <div class="rating-box">
+          <strong>${escapeHtml(r.byName || "Usuario")}</strong>
+          <div class="stars-show">
+            ${"★".repeat(Number(r.stars) || 0)}${"☆".repeat(5 - (Number(r.stars) || 0))}
+          </div>
+          ${r.comment
+            ? `<p class="comment">“${escapeHtml(r.comment)}”</p>`
+            : `<p class="small">Sin comentario.</p>`}
+        </div>`).join("")}`
+      : `
+        <div class="rating-box">
+          <p class="small">
+            Todavía no recibiste calificaciones. Cuando completes una tarea,
+            la otra persona podrá dejarte una opinión.
+          </p>
+        </div>`}
+
     <div class="section-label">Resumen</div>
+
     <div class="card resumen">
-      <div class="card-meta"><span>Tareas publicadas</span><span>${mias.length}</span></div>
-      <div class="card-meta"><span>Tareas completadas</span><span>${mias.filter(t => t.status === "completada").length}</span></div>
-      <div class="card-meta"><span>Postulaciones</span><span>${postulaciones}</span></div>
+      <div class="card-meta">
+        <span>Tareas publicadas</span>
+        <span>${mias.length}</span>
+      </div>
+      <div class="card-meta">
+        <span>Tareas completadas</span>
+        <span>${mias.filter(t => t.status === "completada").length}</span>
+      </div>
+      <div class="card-meta">
+        <span>Postulaciones</span>
+        <span>${postulaciones}</span>
+      </div>
     </div>
-    <p class="modo-conexion">${backend.modo === "firebase"
-      ? "🟢 En línea: tus tareas se ven en todos los dispositivos"
-      : "🟠 Modo demostración: los datos están solo en este navegador"}</p>
+
+    <p class="modo-conexion">
+      ${backend.modo === "firebase"
+        ? "🟢 En línea: tus tareas se ven en todos los dispositivos"
+        : "🟠 Modo demostración: los datos están solo en este navegador"}
+    </p>
+
     <button class="btn btn-secondary" onclick="logout()">Cerrar sesión</button>`;
 }
 
-const render = { feed: renderFeed, materials: renderMaterials, post: renderPost, detail: renderDetail, myTasks: renderMyTasks, profile: renderProfile };
+const render = {
+  feed: renderFeed,
+  materials: renderMaterials,
+  post: renderPost,
+  detail: renderDetail,
+  myTasks: renderMyTasks,
+  profile: renderProfile
+};
 
 if (backend.modo === "local") {
-  $("authNote").textContent = "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
+  $("authNote").textContent =
+    "Modo demostración: las cuentas y las tareas se guardan solo en este navegador. Para que otras personas vean tus tareas, conectá Firebase pegando tus datos en firebaseConfig.";
   $("authNote").classList.remove("hidden");
 }
+
 if (backend.modo === "firebase" && location.protocol === "file:") {
-  $("authNote").textContent = "Para usar la versión en línea abrí la página desde un enlace (https) o con Live Server. Con doble clic sobre el archivo, Firebase no deja iniciar sesión.";
+  $("authNote").textContent =
+    "Para usar la versión en línea abrí la página desde un enlace (https) o con Live Server. Con doble clic sobre el archivo, Firebase no deja iniciar sesión.";
   $("authNote").classList.remove("hidden");
 }
 
 backend.subscribeTasks(list => {
   tasks = list;
-  if (!yo || currentScreen === "post") return;   
-  if (currentScreen === "feed") drawFeedList();   
-  else render[currentScreen]();
+
+  if (!yo || currentScreen === "post") return;
+
+  if (currentScreen === "feed") {
+    drawFeedList();
+  } else {
+    render[currentScreen]();
+  }
 });
 
 backend.onAuth(user => {
   yo = user;
+
   if (user) {
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
