@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0046b4">
-<title>Changuita</title>
+<title>Changuitas</title>
 <link rel="icon" href="logo-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -37,7 +37,7 @@
     <button class="back hidden" id="backBtn" onclick="goBack()">←</button>
     <div class="brand">
       <img class="brand-icon" src="logo-icon.png" alt="">
-      <h1 id="headerTitle">Changuita</h1>
+      <h1 id="headerTitle">Changuitas</h1>
     </div>
     <button class="btn-header" onclick="showScreen('post')">+ Publicar tarea</button>
   </header>
@@ -60,7 +60,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
 const firebaseConfig = {
-   apiKey: "AIzaSyBMSz--Ajb8FDFs6DSWfXmUBmFC76nK9cY",
+
+  apiKey: "AIzaSyBMSz--Ajb8FDFs6DSWfXmUBmFC76nK9cY",
   authDomain: "changuita-d8c62.firebaseapp.com",
   projectId: "changuita-d8c62",
   storageBucket: "changuita-d8c62.firebasestorage.app",
@@ -89,8 +90,8 @@ if (USA_FIREBASE) {
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
-  const tasksRef = db.collection("changuita_tasks");
-  const usersRef = db.collection("changuita_usuarios");
+  const tasksRef = db.collection("changuitas_tasks");
+  const usersRef = db.collection("changuitas_usuarios");
   let nombrePendiente = null;
 
   backend = {
@@ -148,9 +149,9 @@ if (USA_FIREBASE) {
     }
   };
 } else {
-  const K_USERS = "changuita_usuario";
-  const K_SESION = "changuita_sesion";
-  const K_TAREAS = "changuita_tareas";
+  const K_USERS = "changuitas_usuarios";
+  const K_SESION = "changuitas_sesion";
+  const K_TAREAS = "changuitas_tareas";
 
   const leer = (k, def) => {
     try {
@@ -429,7 +430,7 @@ function traducirError(code) {
     "auth/operation-not-allowed": "Falta habilitar el ingreso con correo y contraseña en Firebase (Authentication).",
     "auth/invalid-api-key": "La apiKey de firebaseConfig no es válida. Copiala de nuevo desde Firebase.",
     "auth/api-key-not-valid.-please-pass-a-valid-api-key.": "La apiKey de firebaseConfig no es válida. Copiala de nuevo desde Firebase.",
-    "local/sin-cuenta": "No hay ninguna cuenta con ese correo en este navegador. ",
+    "local/sin-cuenta": "No hay ninguna cuenta con ese correo en este navegador. En modo demostración las cuentas se guardan solo en el navegador donde se crearon: creala acá o conectá Firebase para usarla en todos tus dispositivos.",
     "local/sin-crypto": "Abrí la página desde https o desde localhost para poder crear la cuenta."
   })[code] || "Ocurrió un error. Intentá de nuevo.";
 }
@@ -448,7 +449,7 @@ const NAV = {
 };
 
 const TITULOS = {
-  feed: "Changuita",
+  feed: "Changuitas",
   materials: "Materiales",
   post: "Publicar tarea",
   detail: "Detalle de tarea",
@@ -466,7 +467,7 @@ function showScreen(screen, push = true) {
   Object.values(NAV).forEach(id => $(id).classList.remove("active"));
   if (NAV[screen]) $(NAV[screen]).classList.add("active");
 
-  $("headerTitle").textContent = TITULOS[screen] || "Changuita";
+  $("headerTitle").textContent = TITULOS[screen] || "Changuitas";
   render[screen]();
   $("main").scrollTop = 0;
 }
@@ -755,7 +756,7 @@ function renderDetail() {
     const opiniones = Object.values(calificaciones);
 
     const opinionesHtml = opiniones.length ? `
-      <div class="section-label">Calificaciones de esta postulante</div>
+      <div class="section-label">Calificaciones de esta tarea</div>
       ${opiniones.map(r => `
         <div class="rating-box">
           <strong>${escapeHtml(r.byName || "Usuario")}</strong>
