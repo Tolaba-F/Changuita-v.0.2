@@ -756,7 +756,7 @@ function renderDetail() {
     const opiniones = Object.values(calificaciones);
 
     const opinionesHtml = opiniones.length ? `
-      <div class="section-label">Calificaciones de esta tarea</div>
+      <div class="section-label">Calificaciones de esta postulante </div>
       ${opiniones.map(r => `
         <div class="rating-box">
           <strong>${escapeHtml(r.byName || "Usuario")}</strong>
